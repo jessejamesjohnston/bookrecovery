@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import ai.jessejohnston.bookmend.R
 import ai.jessejohnston.bookmend.usb.FlashNotificationController
 import ai.jessejohnston.bookmend.usb.FlashNotificationController.Phase
+import ai.jessejohnston.bookmend.usb.ExpectedDigest
 import ai.jessejohnston.bookmend.usb.UsbFlasher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -226,7 +227,7 @@ class FlashViewModel(
             val result = flasher.flashImageToUsb(
                 device = device,
                 url = url,
-                expectedZipSha1 = expectedSha1,
+                expectedDownloadDigest = expectedSha1?.let { ExpectedDigest.sha1(it) },
                 expectedImageSize = expectedImageSize,
                 onStep = { step -> _uiState.update { it.copy(stepText = step) } },
                 onProgress = { p ->

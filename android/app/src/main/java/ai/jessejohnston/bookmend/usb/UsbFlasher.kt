@@ -5,12 +5,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.util.Log
 import ai.jessejohnston.bookmend.R
-import ai.jessejohnston.bookmend.usb.bot.BotDevice
-import ai.jessejohnston.bookmend.usb.verify.BoundedDigest
-import ai.jessejohnston.bookmend.usb.verify.IncrementalDigest
-import java.io.FilterInputStream
 import java.io.InputStream
-import java.util.zip.ZipInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -85,25 +80,23 @@ class UsbFlasher(
         SKIPPED
     }
 
-    @Volatile
-    private var isCancelled = false
-
-    @Volatile
-    private var isVerificationSkipped = false
+    private val engine = FlashEngine()
 
     fun cancel() {
-        isCancelled = true
+        engine.cancel()
     }
 
     /** Requests that an in-flight verification pass end early (skip ≠ fail). */
     fun skipVerification() {
-        isVerificationSkipped = true
+        engine.skipVerification()
     }
 
     /**
      * Streams the recovery image at [url] onto [device], then verifies it.
+     * The drive is claimed before the download starts, so a drive that can't
+     * be used (no permission, too small) never costs a download.
      *
-     * @param expectedZipSha1 The manifest's SHA-1 of the downloaded `.zip`, when
+     * @param expectedDownloadDigest The catalog checksum of the download, when
      *   flashing an official image. Null for local files, which get write
      *   verification only.
      * @param onStep Human-readable phase announcements.
@@ -113,215 +106,43 @@ class UsbFlasher(
     suspend fun flashImageToUsb(
         device: UsbDevice,
         url: String,
-        expectedZipSha1: String? = null,
+        expectedDownloadDigest: ExpectedDigest? = null,
         expectedImageSize: Long? = null,
         onStep: (String) -> Unit,
         onProgress: (Float) -> Unit,
         onVerifyProgress: (Float) -> Unit = {}
     ): Result = withContext(Dispatchers.IO) {
-        isCancelled = false
-        isVerificationSkipped = false
         var releaseDrive: (() -> Unit)? = null
-        var dataStream: InputStream? = null
-
+        var stream: InputStream? = null
         try {
+            val claim = drives.connect(device)
+            if (claim is Claim.Failed) return@withContext Result.WriteError(claim.message)
+            val drive = claim as Claim.Ok
+            releaseDrive = drive.release
+
             val opened = when (val source = sources.open(url, onStep)) {
                 is SourceResult.Failed -> return@withContext Result.WriteError(source.message)
                 is SourceResult.Ok -> source.source
             }
-            val isZip = opened.isZip
-            val contentLength = opened.contentLength
-            val inputStream = opened.stream
+            stream = opened.stream
 
-            // When the manifest gave us a checksum, hash the raw (compressed) stream
-            // as it flows past — by the time the write finishes we have the digest of
-            // the entire download for the authenticity check.
-            val sourceDigest = if (expectedZipSha1 != null) IncrementalDigest() else null
-            val sourceStream: InputStream =
-                if (sourceDigest != null) DigestingInputStream(inputStream, sourceDigest) else inputStream
-
-            // Progress denominator, best source first: the manifest's exact
-            // uncompressed size, then the zip entry header, then a 3x-compressed
-            // guess from the download size, then a 4GB fallback.
-            var estimatedUncompressedSize: Long = when {
-                expectedImageSize != null && expectedImageSize > 0 -> expectedImageSize
-                contentLength > 0 -> contentLength * 3
-                else -> 4L * 1024 * 1024 * 1024
+            val local = url.startsWith("content://")
+            val listener = object : FlashEngine.Listener {
+                override fun onStep(step: FlashEngine.Step) = onStep(context.getString(stepText(step, local)))
+                override fun onProgress(fraction: Float) = onProgress(fraction)
+                override fun onVerifyProgress(fraction: Float) = onVerifyProgress(fraction)
             }
-
-            if (isZip) {
-                onStep(if (url.startsWith("content://")) context.getString(R.string.step_unpacking_local) else context.getString(R.string.step_downloading_unpacking))
-                val zipInputStream = ZipInputStream(sourceStream)
-                var entry = zipInputStream.nextEntry
-                while (entry != null) {
-                    if (!entry.isDirectory && entry.name.endsWith(".bin", ignoreCase = true)) {
-                        Log.i(TAG, "Found binary image: ${entry.name}")
-                        if (expectedImageSize == null && entry.size > 0) estimatedUncompressedSize = entry.size
-                        break
-                    }
-                    entry = zipInputStream.nextEntry
-                }
-
-                if (entry == null) {
-                    Log.e(TAG, "No .bin file found in the downloaded zip.")
-                    zipInputStream.close()
-                    return@withContext Result.WriteError(context.getString(R.string.error_invalid_zip))
-                }
-                dataStream = zipInputStream
-            } else {
-                onStep(if (url.startsWith("content://")) context.getString(R.string.step_reading_local) else context.getString(R.string.step_downloading))
-                if (expectedImageSize == null && contentLength > 0) estimatedUncompressedSize = contentLength
-                dataStream = sourceStream
+            when (val outcome = engine.flash(opened, drive.bot, expectedDownloadDigest, expectedImageSize, listener)) {
+                is FlashEngine.Outcome.Success -> Result.Success(outcome.verification)
+                FlashEngine.Outcome.Cancelled -> Result.Cancelled
+                is FlashEngine.Outcome.Failed -> failure(outcome.failure)
             }
-
-            // At this point we have a stream of the decompressed .bin file.
-            val claim = drives.connect(device)
-            if (claim is Claim.Failed) {
-                return@withContext Result.WriteError(claim.message)
-            }
-            val ok = claim as Claim.Ok
-            releaseDrive = ok.release
-            val botDevice = ok.bot
-
-            // Stream the image to the drive, digesting the decompressed bytes as they
-            // pass — this digest is the reference the read-back is checked against.
-            onStep(context.getString(R.string.step_writing_usb))
-            val writtenDigest = IncrementalDigest()
-            var totalRead: Long = 0
-            var currentLba = 0
-            var lastUpdateMs = System.currentTimeMillis()
-
-            val readBuffer = ByteArray(1024 * 64)
-            val chunkBuffer = ByteArray(1024 * 128)
-            var chunkPos = 0
-
-            var bytesRead = dataStream.read(readBuffer)
-            while (bytesRead != -1) {
-                if (isCancelled) {
-                    return@withContext Result.Cancelled
-                }
-
-                writtenDigest.update(readBuffer, 0, bytesRead)
-
-                // Append read bytes to chunkBuffer
-                System.arraycopy(readBuffer, 0, chunkBuffer, chunkPos, bytesRead)
-                chunkPos += bytesRead
-                totalRead += bytesRead
-
-                // If we have enough for a large write (e.g. 64KB), write multiples of 512
-                if (chunkPos >= 65536) {
-                    val bytesToWrite = (chunkPos / 512) * 512
-                    val dataToWrite = ByteArray(bytesToWrite)
-                    System.arraycopy(chunkBuffer, 0, dataToWrite, 0, bytesToWrite)
-
-                    if (!botDevice.writeSectors(currentLba, dataToWrite)) {
-                        Log.e(TAG, "Failed to write sectors at LBA $currentLba")
-                        return@withContext Result.WriteError(context.getString(R.string.error_hardware_write))
-                    }
-
-                    currentLba += bytesToWrite / 512
-                    val remainder = chunkPos - bytesToWrite
-                    if (remainder > 0) {
-                        System.arraycopy(chunkBuffer, bytesToWrite, chunkBuffer, 0, remainder)
-                    }
-                    chunkPos = remainder
-                }
-
-                // Update progress occasionally
-                val now = System.currentTimeMillis()
-                if (now - lastUpdateMs > 500) { // every 500ms
-                    lastUpdateMs = now
-                    val progress = (totalRead.toDouble() / estimatedUncompressedSize.toDouble()).toFloat()
-                    onProgress(progress.coerceIn(0f, 1f))
-                }
-
-                bytesRead = dataStream.read(readBuffer)
-            }
-
-            // Write any remaining data
-            if (chunkPos > 0) {
-                val paddedLength = ((chunkPos + 511) / 512) * 512
-                val dataToWrite = ByteArray(paddedLength)
-                System.arraycopy(chunkBuffer, 0, dataToWrite, 0, chunkPos)
-                // padding is automatically 0 since ByteArray initializes to 0
-                if (!botDevice.writeSectors(currentLba, dataToWrite)) {
-                    Log.e(TAG, "Failed to write final sectors at LBA $currentLba")
-                    return@withContext Result.WriteError(context.getString(R.string.error_drive_too_small))
-                }
-            }
-
-            // Authenticity: the zip's trailing bytes (central directory) sit past the
-            // .bin entry, so drain the source to finish the download digest before
-            // comparing against the manifest checksum.
-            if (sourceDigest != null) {
-                val drain = ByteArray(1024 * 64)
-                while (sourceStream.read(drain) != -1) {
-                    if (isCancelled) return@withContext Result.Cancelled
-                }
-                val downloadHex = sourceDigest.hexDigest()
-                if (!IncrementalDigest.matches(expectedZipSha1, downloadHex)) {
-                    Log.e(TAG, "Download checksum mismatch: manifest=$expectedZipSha1 actual=$downloadHex")
-                    return@withContext Result.VerificationError(
-                        context.getString(R.string.error_authenticity_failed)
-                    )
-                }
-            }
-
-            // Write verification: read back exactly the bytes written (whole sectors
-            // off the wire, but only totalRead bytes into the digest — the final
-            // sector's padding was never part of the image) and compare digests.
-            onStep(context.getString(R.string.step_verifying))
-            onVerifyProgress(0f)
-
-            val expectedWriteHex = writtenDigest.hexDigest()
-            val readBack = BoundedDigest(totalRead)
-            val totalSectors = (totalRead + SECTOR_SIZE - 1) / SECTOR_SIZE
-            var lba = 0L
-            var lastVerifyUpdateMs = System.currentTimeMillis()
-
-            while (lba < totalSectors) {
-                if (isCancelled) {
-                    return@withContext Result.Cancelled
-                }
-                if (isVerificationSkipped) {
-                    return@withContext Result.Success(Verification.SKIPPED)
-                }
-
-                val sectors = minOf(VERIFY_CHUNK_SECTORS.toLong(), totalSectors - lba).toInt()
-                val data = botDevice.readSectors(lba.toInt(), sectors)
-                    ?: return@withContext Result.VerificationError(
-                        context.getString(R.string.error_verification_failed)
-                    )
-                readBack.offer(data, data.size)
-                lba += sectors
-
-                val now = System.currentTimeMillis()
-                if (now - lastVerifyUpdateMs > 500) {
-                    lastVerifyUpdateMs = now
-                    onVerifyProgress((readBack.bytesDigested.toDouble() / totalRead.toDouble()).toFloat().coerceIn(0f, 1f))
-                }
-            }
-            onVerifyProgress(1f)
-
-            if (!IncrementalDigest.matches(expectedWriteHex, readBack.hexDigest())) {
-                Log.e(TAG, "Read-back digest mismatch: written=$expectedWriteHex readback=${readBack.hexDigest()}")
-                return@withContext Result.VerificationError(
-                    context.getString(R.string.error_verification_failed)
-                )
-            }
-
-            return@withContext Result.Success(
-                if (expectedZipSha1 != null) Verification.AUTHENTIC else Verification.WRITE_VERIFIED
-            )
-
         } catch (e: Exception) {
             Log.e(TAG, "Error flashing to USB", e)
-            return@withContext Result.WriteError(
-                context.getString(R.string.error_unexpected, e.message ?: e.javaClass.simpleName)
-            )
+            Result.WriteError(context.getString(R.string.error_unexpected, e.message ?: e.javaClass.simpleName))
         } finally {
             try {
-                dataStream?.close()
+                stream?.close()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to close input stream", e)
             }
@@ -331,6 +152,21 @@ class UsbFlasher(
                 Log.e(TAG, "Failed to close USB connection", e)
             }
         }
+    }
+
+    private fun stepText(step: FlashEngine.Step, local: Boolean): Int = when (step) {
+        FlashEngine.Step.UNPACKING -> if (local) R.string.step_unpacking_local else R.string.step_downloading_unpacking
+        FlashEngine.Step.DOWNLOADING -> if (local) R.string.step_reading_local else R.string.step_downloading
+        FlashEngine.Step.WRITING -> R.string.step_writing_usb
+        FlashEngine.Step.VERIFYING -> R.string.step_verifying
+    }
+
+    private fun failure(failure: FlashEngine.Failure): Result = when (failure) {
+        FlashEngine.Failure.INVALID_ZIP -> Result.WriteError(context.getString(R.string.error_invalid_zip))
+        FlashEngine.Failure.DRIVE_TOO_SMALL -> Result.WriteError(context.getString(R.string.error_drive_too_small))
+        FlashEngine.Failure.HARDWARE_WRITE -> Result.WriteError(context.getString(R.string.error_hardware_write))
+        FlashEngine.Failure.AUTHENTICITY -> Result.VerificationError(context.getString(R.string.error_authenticity_failed))
+        FlashEngine.Failure.VERIFICATION -> Result.VerificationError(context.getString(R.string.error_verification_failed))
     }
 
     /** Terminal outcome of an erase. */
@@ -415,35 +251,6 @@ class UsbFlasher(
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to close USB connection", e)
             }
-        }
-    }
-
-    /**
-     * Passes every byte read through [digest]. Used to hash the raw download
-     * while ZipInputStream consumes it on the fly.
-     */
-    private class DigestingInputStream(
-        source: InputStream,
-        private val digest: IncrementalDigest
-    ) : FilterInputStream(source) {
-
-        private val single = ByteArray(1)
-
-        override fun read(): Int {
-            val value = super.read()
-            if (value != -1) {
-                single[0] = value.toByte()
-                digest.update(single, 0, 1)
-            }
-            return value
-        }
-
-        override fun read(b: ByteArray, off: Int, len: Int): Int {
-            val count = super.read(b, off, len)
-            if (count > 0) {
-                digest.update(b, off, count)
-            }
-            return count
         }
     }
 }

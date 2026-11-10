@@ -41,6 +41,7 @@ class UsbFlasherTest {
         drive: FakeMassStorage,
         source: BytesSource,
         expectedSha1: String? = null,
+        expectedSize: Long? = null,
         onStep: (UsbFlasher, String) -> Unit = { _, _ -> }
     ): Pair<UsbFlasher.Result, FakeDriveConnector> {
         val connector = FakeDriveConnector(drive)
@@ -48,7 +49,8 @@ class UsbFlasherTest {
         val result = flasher.flashImageToUsb(
             device = device,
             url = "https://example.test/image.zip",
-            expectedZipSha1 = expectedSha1,
+            expectedDownloadDigest = expectedSha1?.let { ExpectedDigest.sha1(it) },
+            expectedImageSize = expectedSize,
             onStep = { onStep(flasher, it) },
             onProgress = {}
         )
@@ -101,7 +103,7 @@ class UsbFlasherTest {
         val (result, _) = flash(drive, source)
 
         assertEquals(UsbFlasher.Result.WriteError(context.getString(R.string.error_invalid_zip)), result)
-        assertTrue("no command reached the drive", drive.commands.isEmpty())
+        assertTrue("nothing was written", drive.commands.none { it.first == FakeMassStorage.OP_WRITE10 })
     }
 
     @Test
@@ -113,14 +115,73 @@ class UsbFlasherTest {
     }
 
     @Test
-    fun aDriveTooSmallForTheImageIsReportedAsAHardwareError() = runTest {
-        // Characterizes today's behavior: a drive smaller than the image fails
-        // mid-stream with the generic hardware message, after downloading most
-        // of the image. The engine extraction replaces this with an up-front
-        // capacity check.
+    fun aDriveTooSmallForARawImageFailsBeforeReadingIt() = runTest {
         val drive = drive(sectors = 200)
+        val source = BytesSource(image, isZip = false)
+        val (result, _) = flash(drive, source)
+
+        assertEquals(UsbFlasher.Result.WriteError(context.getString(R.string.error_drive_too_small)), result)
+        assertEquals("not one byte of the image was read", image.size, source.stream!!.available())
+        assertTrue(drive.commands.none { it.first == FakeMassStorage.OP_WRITE10 })
+    }
+
+    @Test
+    fun aDriveTooSmallForTheCatalogSizeFailsBeforeDownloading() = runTest {
+        val zip = zipOf("image.bin" to image)
+        val source = BytesSource(zip, isZip = true)
+        val (result, _) = flash(drive(sectors = 200), source, expectedSize = image.size.toLong())
+
+        assertEquals(UsbFlasher.Result.WriteError(context.getString(R.string.error_drive_too_small)), result)
+        assertEquals(zip.size, source.stream!!.available())
+    }
+
+    @Test
+    fun aDriveThatFillsUpMidwayIsTooSmallNotBroken() = runTest {
+        // A zip with no catalog size and a streamed entry (sizes only after the
+        // data): the size is unknown until the drive runs out.
+        val zip = zipOf("image.bin" to image)
+        val (result, _) = flash(drive(sectors = 200), BytesSource(zip, isZip = true))
+        assertEquals(UsbFlasher.Result.WriteError(context.getString(R.string.error_drive_too_small)), result)
+    }
+
+    @Test
+    fun aDriveWithoutACapacityStillFlashes() = runTest {
+        val drive = drive().apply { capacityFails = true }
         val (result, _) = flash(drive, BytesSource(image, isZip = false))
-        assertEquals(UsbFlasher.Result.WriteError(context.getString(R.string.error_hardware_write)), result)
+        assertEquals(UsbFlasher.Result.Success(UsbFlasher.Verification.WRITE_VERIFIED), result)
+        assertArrayEquals(image, drive.read(0, image.size))
+    }
+
+    @Test
+    fun md5CatalogChecksumsAuthenticateToo() = runTest {
+        val zip = zipOf("android-desktop_signed_recovery_image.bin" to image)
+        val md5 = java.security.MessageDigest.getInstance("MD5").digest(zip).joinToString("") { "%02x".format(it) }
+        val flasher = UsbFlasher(context, FakeDriveConnector(drive()), BytesSource(zip, isZip = true))
+        val result = flasher.flashImageToUsb(
+            device, "https://example.test/recovery.zip",
+            expectedDownloadDigest = ExpectedDigest.md5(md5), onStep = {}, onProgress = {}
+        )
+        assertEquals(UsbFlasher.Result.Success(UsbFlasher.Verification.AUTHENTIC), result)
+    }
+
+    @Test
+    fun stepsAreAnnouncedInOrderInPlainWords() = runTest {
+        val steps = mutableListOf<String>()
+        val zip = zipOf("image.bin" to image)
+        flash(drive(), BytesSource(zip, isZip = true)) { _, step -> steps += step }
+        assertEquals(
+            listOf(R.string.step_downloading_unpacking, R.string.step_writing_usb, R.string.step_verifying)
+                .map { context.getString(it) },
+            steps
+        )
+    }
+
+    @Test
+    fun aTruncatedDownloadIsAnErrorNotACrash() = runTest {
+        val zip = zipOf("image.bin" to image)
+        val (result, connector) = flash(drive(), BytesSource(zip.copyOf(zip.size / 2), isZip = true))
+        assertTrue(result is UsbFlasher.Result.WriteError)
+        assertEquals(1, connector.releases)
     }
 
     @Test
