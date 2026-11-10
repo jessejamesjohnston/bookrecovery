@@ -1,18 +1,10 @@
 package ai.jessejohnston.bookmend.usb.bot
 
-import android.hardware.usb.UsbConstants
-import android.hardware.usb.UsbDeviceConnection
-import android.hardware.usb.UsbEndpoint
-import android.hardware.usb.UsbInterface
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-class BotDevice(
-    private val connection: UsbDeviceConnection,
-    private val usbInterface: UsbInterface,
-    private val endpointIn: UsbEndpoint,
-    private val endpointOut: UsbEndpoint
-) {
+/** SCSI over USB Bulk-Only Transport: WRITE(10), READ(10) and READ CAPACITY(10). */
+class BotDevice(private val transport: BulkTransport) {
     private var tag = 0
 
     fun writeSectors(lba: Int, data: ByteArray): Boolean {
@@ -40,7 +32,7 @@ class BotDevice(
         while (cbw.position() < 31) cbw.put(0x00.toByte())
 
         // Send CBW
-        var result = connection.bulkTransfer(endpointOut, cbw.array(), 31, 5000)
+        var result = transport.bulkOut(cbw.array(), 31, 5000)
         if (result != 31) return false
 
         // Send Data in 16KB chunks to avoid Android bulkTransfer limits
@@ -49,7 +41,7 @@ class BotDevice(
         while (offset < data.size) {
             val toWrite = Math.min(chunkSize, data.size - offset)
             val chunk = data.copyOfRange(offset, offset + toWrite)
-            result = connection.bulkTransfer(endpointOut, chunk, toWrite, 5000)
+            result = transport.bulkOut(chunk, toWrite, 5000)
             if (result != toWrite) return false
             offset += toWrite
         }
@@ -61,7 +53,7 @@ class BotDevice(
         val scratch = ByteArray(13)
         var cswRead = 0
         while (cswRead < 13) {
-            val res = connection.bulkTransfer(endpointIn, scratch, 13 - cswRead, 10000) // 10s timeout for flash writes
+            val res = transport.bulkIn(scratch, 13 - cswRead, 10000) // 10s timeout for flash writes
             if (res < 0) return false
             System.arraycopy(scratch, 0, csw, cswRead, res)
             cswRead += res
@@ -85,13 +77,13 @@ class BotDevice(
         cbw.put(0x25.toByte()) // READ CAPACITY(10) opcode
         while (cbw.position() < 31) cbw.put(0x00.toByte())
 
-        if (connection.bulkTransfer(endpointOut, cbw.array(), 31, 5000) != 31) return null
+        if (transport.bulkOut(cbw.array(), 31, 5000) != 31) return null
 
         val data = ByteArray(8)
         var read = 0
         val scratch = ByteArray(8)
         while (read < 8) {
-            val res = connection.bulkTransfer(endpointIn, scratch, 8 - read, 5000)
+            val res = transport.bulkIn(scratch, 8 - read, 5000)
             if (res <= 0) return null
             System.arraycopy(scratch, 0, data, read, res)
             read += res
@@ -101,7 +93,7 @@ class BotDevice(
         val cswScratch = ByteArray(13)
         var cswRead = 0
         while (cswRead < 13) {
-            val res = connection.bulkTransfer(endpointIn, cswScratch, 13 - cswRead, 5000)
+            val res = transport.bulkIn(cswScratch, 13 - cswRead, 5000)
             if (res < 0) return null
             System.arraycopy(cswScratch, 0, csw, cswRead, res)
             cswRead += res
@@ -145,7 +137,7 @@ class BotDevice(
         
         while (cbw.position() < 31) cbw.put(0x00.toByte())
 
-        if (connection.bulkTransfer(endpointOut, cbw.array(), 31, 5000) != 31) return null
+        if (transport.bulkOut(cbw.array(), 31, 5000) != 31) return null
 
         // Read the data phase in 16KB bulk transfers. Short reads are legal on
         // bulk IN endpoints (packet boundaries), so accumulate rather than fail.
@@ -155,7 +147,7 @@ class BotDevice(
         while (offset < dataSize) {
             val toRead = Math.min(chunkSize, dataSize - offset)
             val chunk = ByteArray(toRead)
-            val result = connection.bulkTransfer(endpointIn, chunk, toRead, 5000)
+            val result = transport.bulkIn(chunk, toRead, 5000)
             if (result <= 0) return null
             System.arraycopy(chunk, 0, data, offset, result)
             offset += result
@@ -165,7 +157,7 @@ class BotDevice(
         val scratch = ByteArray(13)
         var cswRead = 0
         while (cswRead < 13) {
-            val res = connection.bulkTransfer(endpointIn, scratch, 13 - cswRead, 5000)
+            val res = transport.bulkIn(scratch, 13 - cswRead, 5000)
             if (res < 0) return null
             System.arraycopy(scratch, 0, csw, cswRead, res)
             cswRead += res

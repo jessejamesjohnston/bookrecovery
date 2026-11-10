@@ -1,14 +1,8 @@
 package ai.jessejohnston.bookmend.usb
 
 import android.content.Context
-import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbDeviceConnection
-import android.hardware.usb.UsbEndpoint
-import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
-import android.net.Uri
-import android.provider.OpenableColumns
 import android.util.Log
 import ai.jessejohnston.bookmend.R
 import ai.jessejohnston.bookmend.usb.bot.BotDevice
@@ -16,8 +10,6 @@ import ai.jessejohnston.bookmend.usb.verify.BoundedDigest
 import ai.jessejohnston.bookmend.usb.verify.IncrementalDigest
 import java.io.FilterInputStream
 import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.zip.ZipInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,7 +30,14 @@ import kotlinx.coroutines.withContext
  * Note: Since standard Android devices lack root block access (`/dev/block/sda`), this
  * implementation relies on the USB Mass Storage Class protocol to communicate via SCSI commands.
  */
-class UsbFlasher(private val usbManager: UsbManager, private val context: Context) {
+class UsbFlasher(
+    private val context: Context,
+    private val drives: DriveConnector,
+    private val sources: ImageSourceOpener = HttpAndContentSourceOpener(context)
+) {
+
+    constructor(usbManager: UsbManager, context: Context) :
+        this(context, UsbDriveConnector(usbManager, context))
 
     companion object {
         private const val TAG = "UsbFlasher"
@@ -122,91 +121,17 @@ class UsbFlasher(private val usbManager: UsbManager, private val context: Contex
     ): Result = withContext(Dispatchers.IO) {
         isCancelled = false
         isVerificationSkipped = false
-        var usbConnection: UsbDeviceConnection? = null
-        var massStorageInterface: UsbInterface? = null
+        var releaseDrive: (() -> Unit)? = null
         var dataStream: InputStream? = null
 
         try {
-            var isZip = url.endsWith(".zip", ignoreCase = true)
-            val inputStream: InputStream
-            val contentLength: Long
-
-            if (url.startsWith("content://")) {
-                onStep(context.getString(R.string.step_opening_local))
-                val uri = Uri.parse(url)
-                val cursor = context.contentResolver.query(uri, null, null, null, null)
-                var size = 0L
-                cursor?.use {
-                    if (it.moveToFirst()) {
-                        val sizeIndex = it.getColumnIndex(OpenableColumns.SIZE)
-                        if (sizeIndex != -1) size = it.getLong(sizeIndex)
-                        val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        if (nameIndex != -1) {
-                            val displayName = it.getString(nameIndex) ?: ""
-                            if (displayName.endsWith(".zip", ignoreCase = true)) isZip = true
-                        }
-                    }
-                }
-
-                if (size <= 0) {
-                    try {
-                        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
-                            val len = afd.length
-                            if (len > 0) size = len
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to get AssetFileDescriptor length: ${e.message}")
-                    }
-                }
-
-                if (size <= 0) {
-                    try {
-                        context.contentResolver.openFileDescriptor(uri, "r")?.use { fd ->
-                            val len = fd.statSize
-                            if (len > 0) size = len
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to get statSize: ${e.message}")
-                    }
-                }
-
-                if (size <= 0) {
-                    try {
-                        context.contentResolver.openInputStream(uri)?.use { stream ->
-                            val len = stream.available().toLong()
-                            if (len > 0) size = len
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to get available(): ${e.message}")
-                    }
-                }
-
-                if (size <= 0) {
-                    Log.e(TAG, "Absolutely failed to find file size. Using fallback.")
-                }
-
-                contentLength = size
-                inputStream = context.contentResolver.openInputStream(uri)
-                    ?: return@withContext Result.WriteError(context.getString(R.string.error_open_local))
-            } else {
-                onStep(context.getString(R.string.step_connecting_server))
-                val connection = URL(url).openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 15000
-                connection.readTimeout = 60000
-                connection.connect()
-
-                if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                    Log.e(TAG, "Server returned HTTP ${connection.responseCode}")
-                    return@withContext Result.WriteError(
-                        context.getString(R.string.error_http_server, connection.responseCode)
-                    )
-                }
-                // contentLength (Int) overflows on >2GB downloads; several official
-                // images exceed that compressed.
-                contentLength = connection.contentLengthLong
-                inputStream = connection.inputStream
+            val opened = when (val source = sources.open(url, onStep)) {
+                is SourceResult.Failed -> return@withContext Result.WriteError(source.message)
+                is SourceResult.Ok -> source.source
             }
+            val isZip = opened.isZip
+            val contentLength = opened.contentLength
+            val inputStream = opened.stream
 
             // When the manifest gave us a checksum, hash the raw (compressed) stream
             // as it flows past — by the time the write finishes we have the digest of
@@ -250,13 +175,12 @@ class UsbFlasher(private val usbManager: UsbManager, private val context: Contex
             }
 
             // At this point we have a stream of the decompressed .bin file.
-            val claim = claimMassStorage(device)
+            val claim = drives.connect(device)
             if (claim is Claim.Failed) {
                 return@withContext Result.WriteError(claim.message)
             }
             val ok = claim as Claim.Ok
-            usbConnection = ok.connection
-            massStorageInterface = ok.usbInterface
+            releaseDrive = ok.release
             val botDevice = ok.bot
 
             // Stream the image to the drive, digesting the decompressed bytes as they
@@ -402,10 +326,7 @@ class UsbFlasher(private val usbManager: UsbManager, private val context: Contex
                 Log.e(TAG, "Failed to close input stream", e)
             }
             try {
-                if (massStorageInterface != null) {
-                    usbConnection?.releaseInterface(massStorageInterface)
-                }
-                usbConnection?.close()
+                releaseDrive?.invoke()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to close USB connection", e)
             }
@@ -433,16 +354,14 @@ class UsbFlasher(private val usbManager: UsbManager, private val context: Contex
         device: UsbDevice,
         onProgress: (Float) -> Unit
     ): EraseResult = withContext(Dispatchers.IO) {
-        var connection: UsbDeviceConnection? = null
-        var claimedInterface: UsbInterface? = null
+        var releaseDrive: (() -> Unit)? = null
         try {
-            val claim = claimMassStorage(device)
+            val claim = drives.connect(device)
             if (claim is Claim.Failed) {
                 return@withContext EraseResult.Error(claim.message)
             }
             val ok = claim as Claim.Ok
-            connection = ok.connection
-            claimedInterface = ok.usbInterface
+            releaseDrive = ok.release
             val bot = ok.bot
 
             val capacity = bot.readCapacity()
@@ -492,71 +411,11 @@ class UsbFlasher(private val usbManager: UsbManager, private val context: Contex
             EraseResult.Error(context.getString(R.string.error_unexpected, e.message ?: e.javaClass.simpleName))
         } finally {
             try {
-                if (claimedInterface != null) {
-                    connection?.releaseInterface(claimedInterface)
-                }
-                connection?.close()
+                releaseDrive?.invoke()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to close USB connection", e)
             }
         }
-    }
-
-    private sealed interface Claim {
-        class Ok(
-            val connection: UsbDeviceConnection,
-            val usbInterface: UsbInterface,
-            val bot: BotDevice
-        ) : Claim
-
-        class Failed(val message: String) : Claim
-    }
-
-    /**
-     * Opens [device], finds the mass-storage interface and its bulk endpoints,
-     * and claims it. On failure the connection is closed and a localized,
-     * user-facing message is returned.
-     */
-    private fun claimMassStorage(device: UsbDevice): Claim {
-        val connection = usbManager.openDevice(device)
-        if (connection == null) {
-            Log.e(TAG, "Permission denied for USB device.")
-            return Claim.Failed(context.getString(R.string.error_usb_permission))
-        }
-
-        var massStorageInterface: UsbInterface? = null
-        var endpointIn: UsbEndpoint? = null
-        var endpointOut: UsbEndpoint? = null
-
-        for (i in 0 until device.interfaceCount) {
-            val intf = device.getInterface(i)
-            if (intf.interfaceClass == UsbConstants.USB_CLASS_MASS_STORAGE) {
-                massStorageInterface = intf
-                for (j in 0 until intf.endpointCount) {
-                    val ep = intf.getEndpoint(j)
-                    if (ep.direction == UsbConstants.USB_DIR_IN) {
-                        endpointIn = ep
-                    } else if (ep.direction == UsbConstants.USB_DIR_OUT) {
-                        endpointOut = ep
-                    }
-                }
-                break
-            }
-        }
-
-        if (massStorageInterface == null || endpointIn == null || endpointOut == null) {
-            Log.e(TAG, "Could not find mass storage interface or endpoints.")
-            connection.close()
-            return Claim.Failed(context.getString(R.string.error_not_mass_storage))
-        }
-
-        if (!connection.claimInterface(massStorageInterface, true)) {
-            Log.e(TAG, "Could not claim mass storage interface.")
-            connection.close()
-            return Claim.Failed(context.getString(R.string.error_claim_interface))
-        }
-
-        return Claim.Ok(connection, massStorageInterface, BotDevice(connection, massStorageInterface, endpointIn, endpointOut))
     }
 
     /**

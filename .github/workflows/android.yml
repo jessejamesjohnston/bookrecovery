@@ -18,11 +18,13 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
-      - name: Build and lint
-        run: ./gradlew assembleDebug lint
-      - name: Upload lint report
+      - name: Build, test and lint
+        run: ./gradlew assembleDebug testDebugUnitTest lint
+      - name: Upload reports
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: lint-report
-          path: android/app/build/reports/lint-results-debug.html
+          name: reports
+          path: |
+            android/app/build/reports/lint-results-debug.html
+            android/app/build/reports/tests/
