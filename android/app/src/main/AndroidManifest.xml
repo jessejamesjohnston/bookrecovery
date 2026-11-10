@@ -15,15 +15,15 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
-        android:label="Book Recovery"
+        android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.ChromebookRecovery">
+        android:theme="@style/Theme.Bookmend">
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:label="Book Recovery"
-            android:theme="@style/Theme.ChromebookRecovery">
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Bookmend">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

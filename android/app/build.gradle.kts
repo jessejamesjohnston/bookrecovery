@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.google.chrome.recovery"
+    namespace = "ai.jessejohnston.bookmend"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.google.chrome.recovery"
+        applicationId = "ai.jessejohnston.bookmend"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

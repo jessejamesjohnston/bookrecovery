@@ -1,4 +1,4 @@
-# Book Recovery Utility
+# Bookmend
 
 A modern, robust Android application built to recover Chromebooks by securely downloading and flashing ChromeOS and ChromeOS Flex recovery images directly onto USB storage devices using Android's native USB Host API.
 
@@ -25,9 +25,7 @@ This application is built with **Jetpack Compose** and leverages modern Android 
 
 ## Releases
 
-Ready to try it out? You can find pre-compiled debug binaries in the `releases/` directory:
-- [book-recovery-debug.apk](releases/book-recovery-debug.apk)
-- [book-recovery-debug.aab](releases/book-recovery-debug.aab)
+Signed builds will be published on the [Releases](../../releases) page.
 
 ## Building from Source
 

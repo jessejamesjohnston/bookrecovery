@@ -1,0 +1,177 @@
+package ai.jessejohnston.bookmend.usb.bot
+
+import android.hardware.usb.UsbConstants
+import android.hardware.usb.UsbDeviceConnection
+import android.hardware.usb.UsbEndpoint
+import android.hardware.usb.UsbInterface
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+class BotDevice(
+    private val connection: UsbDeviceConnection,
+    private val usbInterface: UsbInterface,
+    private val endpointIn: UsbEndpoint,
+    private val endpointOut: UsbEndpoint
+) {
+    private var tag = 0
+
+    fun writeSectors(lba: Int, data: ByteArray): Boolean {
+        val sectors = data.size / 512
+        if (data.size % 512 != 0) return false
+
+        // SCSI WRITE(10)
+        val cbw = ByteBuffer.allocate(31).order(ByteOrder.LITTLE_ENDIAN)
+        cbw.putInt(0x43425355) // Signature "USBC"
+        cbw.putInt(++tag)
+        cbw.putInt(data.size) // DataTransferLength
+        cbw.put(0x00.toByte()) // Flags (0 = out to device)
+        cbw.put(0x00.toByte()) // LUN
+        cbw.put(10.toByte()) // Command Length
+        
+        // SCSI payload
+        cbw.put(0x2A.toByte()) // WRITE(10) opcode
+        cbw.put(0x00.toByte())
+        cbw.putInt(Integer.reverseBytes(lba)) // LBA is big endian in SCSI
+        cbw.put(0x00.toByte())
+        cbw.putShort(java.lang.Short.reverseBytes(sectors.toShort())) // Transfer length big endian
+        cbw.put(0x00.toByte()) // Control
+        
+        // Pad to 31 bytes
+        while (cbw.position() < 31) cbw.put(0x00.toByte())
+
+        // Send CBW
+        var result = connection.bulkTransfer(endpointOut, cbw.array(), 31, 5000)
+        if (result != 31) return false
+
+        // Send Data in 16KB chunks to avoid Android bulkTransfer limits
+        val chunkSize = 16384
+        var offset = 0
+        while (offset < data.size) {
+            val toWrite = Math.min(chunkSize, data.size - offset)
+            val chunk = data.copyOfRange(offset, offset + toWrite)
+            result = connection.bulkTransfer(endpointOut, chunk, toWrite, 5000)
+            if (result != toWrite) return false
+            offset += toWrite
+        }
+
+        // Read CSW. bulkTransfer always writes at the buffer's start, so partial
+        // reads must accumulate through a scratch buffer — reading into csw
+        // directly a second time would overwrite the bytes already collected.
+        val csw = ByteArray(13)
+        val scratch = ByteArray(13)
+        var cswRead = 0
+        while (cswRead < 13) {
+            val res = connection.bulkTransfer(endpointIn, scratch, 13 - cswRead, 10000) // 10s timeout for flash writes
+            if (res < 0) return false
+            System.arraycopy(scratch, 0, csw, cswRead, res)
+            cswRead += res
+        }
+        return csw[12] == 0.toByte() // Status == 0 (Passed)
+    }
+
+    /**
+     * SCSI READ CAPACITY(10): returns the drive's total sector count and sector
+     * size, or null on failure. Needed to locate structures at the end of the
+     * disk (e.g. the backup GPT) without guessing the drive's size.
+     */
+    fun readCapacity(): Capacity? {
+        val cbw = ByteBuffer.allocate(31).order(ByteOrder.LITTLE_ENDIAN)
+        cbw.putInt(0x43425355) // Signature "USBC"
+        cbw.putInt(++tag)
+        cbw.putInt(8) // DataTransferLength: 8-byte capacity structure
+        cbw.put(0x80.toByte()) // Flags (in from device)
+        cbw.put(0x00.toByte()) // LUN
+        cbw.put(10.toByte()) // Command Length
+        cbw.put(0x25.toByte()) // READ CAPACITY(10) opcode
+        while (cbw.position() < 31) cbw.put(0x00.toByte())
+
+        if (connection.bulkTransfer(endpointOut, cbw.array(), 31, 5000) != 31) return null
+
+        val data = ByteArray(8)
+        var read = 0
+        val scratch = ByteArray(8)
+        while (read < 8) {
+            val res = connection.bulkTransfer(endpointIn, scratch, 8 - read, 5000)
+            if (res <= 0) return null
+            System.arraycopy(scratch, 0, data, read, res)
+            read += res
+        }
+
+        val csw = ByteArray(13)
+        val cswScratch = ByteArray(13)
+        var cswRead = 0
+        while (cswRead < 13) {
+            val res = connection.bulkTransfer(endpointIn, cswScratch, 13 - cswRead, 5000)
+            if (res < 0) return null
+            System.arraycopy(cswScratch, 0, csw, cswRead, res)
+            cswRead += res
+        }
+        if (csw[12] != 0.toByte()) return null
+
+        // Both fields are big-endian; the LBA field is the LAST addressable
+        // sector, so total count is +1. Mask to keep the unsigned range.
+        val lastLba = ((data[0].toLong() and 0xff) shl 24) or
+            ((data[1].toLong() and 0xff) shl 16) or
+            ((data[2].toLong() and 0xff) shl 8) or
+            (data[3].toLong() and 0xff)
+        val blockSize = ((data[4].toInt() and 0xff) shl 24) or
+            ((data[5].toInt() and 0xff) shl 16) or
+            ((data[6].toInt() and 0xff) shl 8) or
+            (data[7].toInt() and 0xff)
+        return Capacity(totalSectors = lastLba + 1, sectorSize = blockSize)
+    }
+
+    data class Capacity(val totalSectors: Long, val sectorSize: Int)
+
+    fun readSectors(lba: Int, numSectors: Int): ByteArray? {
+        val dataSize = numSectors * 512
+        
+        // SCSI READ(10)
+        val cbw = ByteBuffer.allocate(31).order(ByteOrder.LITTLE_ENDIAN)
+        cbw.putInt(0x43425355) // Signature "USBC"
+        cbw.putInt(++tag)
+        cbw.putInt(dataSize) // DataTransferLength
+        cbw.put(0x80.toByte()) // Flags (1 = in from device)
+        cbw.put(0x00.toByte()) // LUN
+        cbw.put(10.toByte()) // Command Length
+        
+        // SCSI payload
+        cbw.put(0x28.toByte()) // READ(10) opcode
+        cbw.put(0x00.toByte())
+        cbw.putInt(Integer.reverseBytes(lba)) // LBA big endian
+        cbw.put(0x00.toByte())
+        cbw.putShort(java.lang.Short.reverseBytes(numSectors.toShort())) // length big endian
+        cbw.put(0x00.toByte()) // Control
+        
+        while (cbw.position() < 31) cbw.put(0x00.toByte())
+
+        if (connection.bulkTransfer(endpointOut, cbw.array(), 31, 5000) != 31) return null
+
+        // Read the data phase in 16KB bulk transfers. Short reads are legal on
+        // bulk IN endpoints (packet boundaries), so accumulate rather than fail.
+        val data = ByteArray(dataSize)
+        val chunkSize = 16384
+        var offset = 0
+        while (offset < dataSize) {
+            val toRead = Math.min(chunkSize, dataSize - offset)
+            val chunk = ByteArray(toRead)
+            val result = connection.bulkTransfer(endpointIn, chunk, toRead, 5000)
+            if (result <= 0) return null
+            System.arraycopy(chunk, 0, data, offset, result)
+            offset += result
+        }
+
+        val csw = ByteArray(13)
+        val scratch = ByteArray(13)
+        var cswRead = 0
+        while (cswRead < 13) {
+            val res = connection.bulkTransfer(endpointIn, scratch, 13 - cswRead, 5000)
+            if (res < 0) return null
+            System.arraycopy(scratch, 0, csw, cswRead, res)
+            cswRead += res
+        }
+        if (csw[12] != 0.toByte()) return null
+
+        return data
+    }
+}
