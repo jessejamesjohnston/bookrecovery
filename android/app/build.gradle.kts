@@ -1,3 +1,6 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -22,9 +25,32 @@ android {
         }
     }
 
+    // Release signing reads ~/.config/bookmend/keystore.properties (storeFile,
+    // storePassword, keyAlias, keyPassword), which never enters the repo.
+    // -PdebugSignRelease signs a release build with the debug key, for
+    // checking a shrunk build on an emulator; it is never published.
+    val keystoreProps = File(System.getProperty("user.home"), ".config/bookmend/keystore.properties")
+    signingConfigs {
+        if (keystoreProps.exists()) {
+            create("release") {
+                val props = Properties().apply { keystoreProps.inputStream().use { load(it) } }
+                storeFile = file(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = when {
+                keystoreProps.exists() -> signingConfigs.getByName("release")
+                project.hasProperty("debugSignRelease") -> signingConfigs.getByName("debug")
+                else -> null
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
