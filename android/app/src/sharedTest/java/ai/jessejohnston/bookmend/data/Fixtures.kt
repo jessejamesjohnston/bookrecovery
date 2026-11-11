@@ -1,7 +1,7 @@
 package ai.jessejohnston.bookmend.data
 
 /** Excerpts shaped like Google's catalogs, with the awkward cases mixed in. */
-internal object CatalogFixtures {
+object CatalogFixtures {
     val chromeOs = """
     [
       {"channel":"STABLE","name":"Acer Chromebook 514 (CB514-2H, CB514-2HT)","manufacturer":"Acer",
