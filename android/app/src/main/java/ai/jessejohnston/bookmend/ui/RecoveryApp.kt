@@ -1,256 +1,305 @@
 package ai.jessejohnston.bookmend.ui
 
-import android.hardware.usb.UsbDevice
+import ai.jessejohnston.bookmend.R
+import ai.jessejohnston.bookmend.data.DeviceFamily
+import ai.jessejohnston.bookmend.ui.screens.DriveScreen
+import ai.jessejohnston.bookmend.ui.screens.EraseScreen
+import ai.jessejohnston.bookmend.ui.screens.FamilyScreen
+import ai.jessejohnston.bookmend.ui.screens.FlashScreen
+import ai.jessejohnston.bookmend.ui.screens.IdentifyScreen
+import ai.jessejohnston.bookmend.ui.screens.LicensesScreen
+import ai.jessejohnston.bookmend.ui.screens.ModelBrowserScreen
+import ai.jessejohnston.bookmend.ui.screens.WelcomeScreen
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import ai.jessejohnston.bookmend.R
-import ai.jessejohnston.bookmend.ui.screens.*
+import androidx.navigation.navArgument
 
 /**
- * The main entry point for the UI of Bookmend.
- * 
- * This composable sets up the Navigation graph using Jetpack Compose Navigation.
- * It manages the high-level shared state (such as the selected download URL,
- * the chosen USB device, and whether an erase should happen before flashing).
- * 
- * The application follows a "wizard" style navigation flow:
- * 1. Welcome -> 2. Identify / Select Model -> 3. Select Channel -> 4. Select Drive -> 5. Flash
+ * Bookmend's wizard: Welcome, then Device (family, model), Drive, Write.
+ *
+ * Choices live in [WizardViewModel] (activity-scoped), so every screen reads
+ * the same state and rotation, resizing and process death keep it. Screens
+ * get callbacks, not the controller, which keeps them previewable and
+ * testable on their own.
+ *
+ * @param onRouteChanged Lets the activity follow the wizard (Continue On is
+ *   offered on the choosing steps and withheld while a drive is being written).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecoveryApp() {
-    // Navigation controller for managing routing between wizard steps
-    val navController = rememberNavController()
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
+fun RecoveryApp(
+    wizard: WizardViewModel,
+    navController: NavHostController = rememberNavController(),
+    onRouteChanged: (Route?) -> Unit = {},
+) {
+    val entry by navController.currentBackStackEntryAsState()
+    val route = Route.of(entry?.destination?.route)
+    LaunchedEffect(route) { onRouteChanged(route) }
 
-    // Wizard state is saveable so it survives configuration changes (rotation,
-    // fold/unfold, window resize) and system-initiated process death. UsbDevice
-    // is Parcelable, so the default saver handles all three.
-    var selectedUrl by rememberSaveable { mutableStateOf<String?>(null) }
-    var selectedSha1 by rememberSaveable { mutableStateOf<String?>(null) }
-    var selectedImageSize by rememberSaveable { mutableStateOf<Long?>(null) }
-    var selectedDevice by rememberSaveable { mutableStateOf<UsbDevice?>(null) }
-    var eraseFirst by rememberSaveable { mutableStateOf(false) }
+    val family by wizard.family.collectAsStateWithLifecycle()
+    val image by wizard.image.collectAsStateWithLifecycle()
 
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            selectedUrl = uri.toString()
-            // Local files carry no manifest checksum; the flash gets write
-            // verification only.
-            selectedSha1 = null
-            selectedImageSize = null
-            navController.navigate(Route.SelectDrive.pattern)
+    // A choice made on another device (Continue On) lands on the same model.
+    val handoff by wizard.handoffRoute.collectAsStateWithLifecycle()
+    LaunchedEffect(handoff) {
+        handoff?.let { target ->
+            navController.popBackStack(Route.Welcome.pattern, inclusive = false)
+            navController.navigate(Route.Family.pattern)
+            navController.navigate(target)
+            wizard.handoffShown()
         }
     }
+
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            wizard.chooseLocalImage(uri.toString())
+            navController.navigate(Route.Drive.pattern)
+        }
+    }
+
+    fun home() {
+        wizard.reset()
+        navController.popBackStack(Route.Welcome.pattern, inclusive = false)
+    }
+
+    val busy = route == Route.Flash || route == Route.EraseFlash
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
-                    val stepIndex = when (currentRoute) {
-                        Route.Welcome.pattern -> 1
-                        Route.Identify.pattern, Route.SelectModel.pattern, Route.SelectChannel.pattern -> 2
-                        Route.SelectDrive.pattern, Route.EraseDrive.pattern -> 3
-                        Route.Flash.pattern, Route.EraseFlash.pattern -> 4
-                        else -> 1
-                    }
-                    Column {
-                        Text(stringResource(R.string.app_name))
-                        if (currentRoute != Route.Welcome.pattern && currentRoute != null) {
-                            Text(
-                                stringResource(R.string.title_step_of, stepIndex, 4),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
-                            )
-                        }
+                title = {
+                    if (route != null && route.step > 0) {
+                        WizardSteps(current = route.step)
+                    } else if (route != Route.Welcome) {
+                        Text(stringResource(if (route == Route.Licenses) R.string.licenses_title else R.string.menu_erase_drive))
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
-                ),
                 navigationIcon = {
-                    if (currentRoute != Route.Welcome.pattern) {
-                        if (currentRoute == Route.Flash.pattern || currentRoute == Route.EraseFlash.pattern) {
-                            IconButton(onClick = { navController.popBackStack(Route.Welcome.pattern, inclusive = false) }) {
-                                Icon(Icons.Filled.Home, contentDescription = stringResource(R.string.action_home))
-                            }
-                        } else {
-                            IconButton(onClick = { navController.navigateUp() }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
-                            }
+                    when {
+                        route == null || route == Route.Welcome -> Unit
+                        busy -> IconButton(onClick = ::home) {
+                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_home))
+                        }
+                        else -> IconButton(onClick = { navController.navigateUp() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                         }
                     }
                 },
                 actions = {
-                    // Hide the erase action while an operation is running (flash or
-                    // erase): navigating away would abandon a real write/wipe in
-                    // progress. It only makes sense on the setup screens.
-                    val isOperationRunning = currentRoute == Route.Flash.pattern ||
-                        currentRoute == Route.EraseFlash.pattern
-                    if (!isOperationRunning) {
-                        var expanded by remember { mutableStateOf(false) }
-                        IconButton(onClick = { expanded = true }) {
+                    // Tools are hidden while a drive is being written or erased:
+                    // leaving would abandon real work on the drive.
+                    if (!busy) {
+                        var open by remember { mutableStateOf(false) }
+                        IconButton(onClick = { open = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.action_more))
                         }
-                        DropdownMenu(
-                            expanded = expanded,
-                            onDismissRequest = { expanded = false }
-                        ) {
+                        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_erase_media)) },
-                                onClick = {
-                                    expanded = false
-                                    navController.navigate(Route.EraseDrive.pattern)
-                                }
+                                text = { Text(stringResource(R.string.menu_use_file)) },
+                                onClick = { open = false; filePicker.launch(arrayOf("*/*")) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.menu_erase_drive)) },
+                                onClick = { open = false; navController.navigate(Route.EraseDrive.pattern) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.menu_licenses)) },
+                                onClick = { open = false; navController.navigate(Route.Licenses.pattern) }
                             )
                         }
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
             )
         }
-    ) { innerPadding ->
-        // Wizard steps advance with the theme's expressive motion: forward slides
-        // in on a fast spatial (spring) spec while the outgoing step fades on the
-        // effects spec; popping back mirrors it. Spatial specs animate position,
-        // effects specs animate alpha, per the MotionScheme contract.
-        val motionScheme = MaterialTheme.motionScheme
+    ) { padding ->
+        // Forward slides in on the expressive spatial spring while the old step
+        // fades; back mirrors it. With predictive back, the system drives the pop.
+        val motion = MaterialTheme.motionScheme
         NavHost(
             navController = navController,
             startDestination = Route.Welcome.pattern,
-            modifier = Modifier.padding(innerPadding),
+            modifier = Modifier.padding(padding),
             enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Start,
-                    motionScheme.fastSpatialSpec()
-                ) + fadeIn(motionScheme.fastEffectsSpec())
+                slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, motion.fastSpatialSpec()) +
+                    fadeIn(motion.fastEffectsSpec())
             },
-            exitTransition = { fadeOut(motionScheme.fastEffectsSpec()) },
-            popEnterTransition = { fadeIn(motionScheme.fastEffectsSpec()) },
+            exitTransition = { fadeOut(motion.fastEffectsSpec()) },
+            popEnterTransition = { fadeIn(motion.fastEffectsSpec()) },
             popExitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.End,
-                    motionScheme.fastSpatialSpec()
-                ) + fadeOut(motionScheme.fastEffectsSpec())
+                slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, motion.fastSpatialSpec()) +
+                    fadeOut(motion.fastEffectsSpec())
             }
         ) {
             composable(Route.Welcome.pattern) {
-                WelcomeScreen(onNext = { navController.navigate(Route.Identify.pattern) })
+                WelcomeScreen(
+                    onStart = { navController.navigate(Route.Family.pattern) },
+                    onUseFile = { filePicker.launch(arrayOf("*/*")) }
+                )
+            }
+            composable(Route.Family.pattern) {
+                FamilyScreen(
+                    selected = family,
+                    onChoose = { chosen ->
+                        wizard.chooseFamily(chosen)
+                        navController.navigate(
+                            if (chosen == DeviceFamily.CHROMEBOOK) Route.Identify.pattern else Route.Models.withQuery()
+                        )
+                    }
+                )
             }
             composable(Route.Identify.pattern) {
+                val catalog by wizard.catalog.collectAsStateWithLifecycle()
                 IdentifyScreen(
-                    onNext = { modelName ->
-                        navController.navigate(Route.SelectChannel.forModel(modelName))
-                    },
-                    onSelectFromList = {
-                        navController.navigate(Route.SelectModel.pattern)
-                    },
-                    onSelectLocalImage = {
-                        filePickerLauncher.launch(arrayOf("*/*"))
+                    catalog = catalog,
+                    identify = wizard::identify,
+                    onRetry = wizard::retryCatalog,
+                    onFound = { name -> navController.navigate(Route.Models.withQuery(name)) },
+                    onBrowse = { navController.navigate(Route.Models.withQuery()) }
+                )
+            }
+            composable(
+                Route.Models.pattern,
+                arguments = listOf(navArgument(Route.ARG_QUERY) { type = NavType.StringType; nullable = true })
+            ) { backStack ->
+                val catalog by wizard.catalog.collectAsStateWithLifecycle()
+                ModelBrowserScreen(
+                    family = family ?: DeviceFamily.CHROMEBOOK,
+                    catalog = catalog,
+                    initialQuery = backStack.arguments?.getString(Route.ARG_QUERY)?.let(Uri::decode),
+                    selected = image,
+                    onRetry = wizard::retryCatalog,
+                    onChoose = { chosen ->
+                        wizard.chooseImage(chosen)
+                        navController.navigate(Route.Drive.pattern)
                     }
                 )
             }
-            composable(Route.SelectModel.pattern) {
-                SelectModelScreen(
-                    onNext = { modelName ->
-                        navController.navigate(Route.SelectChannel.forModel(modelName))
-                    },
-                    onImageSelected = { image ->
-                        // Expanded widths pick the channel in the detail pane, so the
-                        // separate channel step is skipped entirely.
-                        selectedUrl = image.url
-                        selectedSha1 = image.sha1
-                        selectedImageSize = image.filesize
-                        navController.navigate(Route.SelectDrive.pattern)
-                    }
-                )
-            }
-            composable(Route.SelectChannel.pattern) { backStackEntry ->
-                val modelName = Uri.decode(backStackEntry.arguments?.getString(Route.ARG_MODEL_NAME) ?: "")
-                SelectChannelScreen(
-                    modelName = modelName,
-                    onNext = { image ->
-                        selectedUrl = image.url
-                        selectedSha1 = image.sha1
-                        selectedImageSize = image.filesize
-                        navController.navigate(Route.SelectDrive.pattern)
-                    }
-                )
-            }
-            composable(Route.SelectDrive.pattern) {
-                SelectDriveScreen(
-                    isEraseFlow = false,
-                    onNext = { device ->
-                        selectedDevice = device
-                        eraseFirst = false
-                        navController.navigate(Route.Flash.pattern)
-                    },
-                    onEraseFirst = { device ->
-                        selectedDevice = device
-                        eraseFirst = true
+            composable(Route.Drive.pattern) {
+                DriveScreen(
+                    requiredBytes = image?.imageBytes,
+                    targetName = image?.name,
+                    eraseOnly = false,
+                    onConfirmed = { device ->
+                        wizard.chooseDrive(device)
                         navController.navigate(Route.Flash.pattern)
                     }
                 )
             }
             composable(Route.EraseDrive.pattern) {
-                SelectDriveScreen(
-                    isEraseFlow = true,
-                    onNext = { device ->
-                        selectedDevice = device
+                DriveScreen(
+                    requiredBytes = null,
+                    targetName = null,
+                    eraseOnly = true,
+                    onConfirmed = { device ->
+                        wizard.chooseDrive(device)
                         navController.navigate(Route.EraseFlash.pattern)
                     }
                 )
             }
             composable(Route.Flash.pattern) {
-                if (selectedUrl != null && selectedDevice != null) {
-                    FlashScreen(
-                        url = selectedUrl!!,
-                        device = selectedDevice!!,
-                        expectedSha1 = selectedSha1,
-                        expectedImageSize = selectedImageSize,
-                        eraseFirst = eraseFirst,
-                        onFinish = {
-                            navController.popBackStack(Route.Welcome.pattern, inclusive = false)
-                        }
-                    )
+                val request = remember { wizard.flashRequest() }
+                if (request != null) {
+                    FlashScreen(request = request, onFinish = ::home)
                 } else {
-                    navController.popBackStack()
+                    LaunchedEffect(Unit) { navController.popBackStack() }
                 }
             }
             composable(Route.EraseFlash.pattern) {
-                if (selectedDevice != null) {
-                    EraseScreen(
-                        device = selectedDevice!!,
-                        onFinish = {
-                            navController.popBackStack(Route.Welcome.pattern, inclusive = false)
-                        }
-                    )
+                val device by wizard.drive.collectAsStateWithLifecycle()
+                val current = device
+                if (current != null) {
+                    EraseScreen(device = current, onFinish = ::home)
                 } else {
-                    navController.popBackStack()
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                }
+            }
+            composable(Route.Licenses.pattern) { LicensesScreen() }
+        }
+    }
+}
+
+/**
+ * Three segments under the title, the current one in the accent: where you
+ * are in Device, Drive, Write. Read by screen readers as one phrase.
+ */
+@Composable
+fun WizardSteps(current: Int, modifier: Modifier = Modifier) {
+    val labels = listOf(R.string.step_label_device, R.string.step_label_drive, R.string.step_label_write)
+        .map { stringResource(it) }
+    val description = stringResource(R.string.step_progress_description, current, Route.STEPS, labels[current - 1])
+    Column(modifier.widthIn(max = 360.dp).clearAndSetSemantics { contentDescription = description }) {
+        Text(labels[current - 1], style = MaterialTheme.typography.titleMedium)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(top = 6.dp).fillMaxWidth()
+        ) {
+            for (step in 1..Route.STEPS) {
+                val fill by animateFloatAsState(if (step <= current) 1f else 0f, MaterialTheme.motionScheme.fastEffectsSpec(), label = "step$step")
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(4.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(fill)
+                            .height(4.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary)
+                            .align(Alignment.CenterStart)
+                    )
                 }
             }
         }

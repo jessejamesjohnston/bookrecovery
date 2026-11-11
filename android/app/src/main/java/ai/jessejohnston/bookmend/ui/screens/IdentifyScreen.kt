@@ -1,201 +1,119 @@
 package ai.jessejohnston.bookmend.ui.screens
 
-import androidx.compose.foundation.clickable
+import ai.jessejohnston.bookmend.R
+import ai.jessejohnston.bookmend.ui.CatalogState
+import ai.jessejohnston.bookmend.ui.IdentifyResult
 import ai.jessejohnston.bookmend.ui.art.RecoveryScreenLaptop
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
-import ai.jessejohnston.bookmend.R
-import ai.jessejohnston.bookmend.data.RecoveryImage
-import ai.jessejohnston.bookmend.data.RecoveryRepository
-import ai.jessejohnston.bookmend.ui.wizardContentWidth
 
-@OptIn(ExperimentalMaterial3Api::class)
 /**
- * The Identify Screen (Wizard Step 2a).
- *
- * This screen allows users to input their 20-character Chromebook Hardware ID (hwid)
- * to automatically identify the exact model they need to recover.
- * 
- * If a matching model is found, the screen displays a verification checkmark and enables
- * navigation. If the user doesn't know their hwid, they can choose to select the model
- * from a dropdown list (navigating to [SelectModelScreen]).
- * 
- * Users can also opt to flash a local `.bin`/`.zip` image from their device storage.
+ * Chromebooks name themselves on the recovery screen ("SPHERION C4B-K3E").
+ * Typing that finds the exact model; browsing is the fallback.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun IdentifyScreen(
-    onNext: (String) -> Unit,
-    onSelectFromList: () -> Unit,
-    onSelectLocalImage: () -> Unit
+    catalog: CatalogState,
+    identify: (String) -> IdentifyResult,
+    onRetry: () -> Unit,
+    onFound: (String) -> Unit,
+    onBrowse: () -> Unit,
 ) {
-    val haptics = LocalHapticFeedback.current
-    val repository = RecoveryRepository.instance
-    var images by remember { mutableStateOf<List<RecoveryImage>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
+    var input by rememberSaveable { mutableStateOf("") }
+    var result by remember { mutableStateOf<IdentifyResult?>(null) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val ready = catalog is CatalogState.Ready
 
-    var typedModel by rememberSaveable { mutableStateOf("") }
-    var showError by remember { mutableStateOf(false) }
-    var showHowToDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        images = repository.fetchRecoveryImages()
-        isLoading = false
+    fun submit() {
+        if (!ready || input.isBlank()) return
+        keyboard?.hide()
+        val found = identify(input)
+        result = found
+        if (found is IdentifyResult.Match) onFound(found.modelName)
     }
 
-    if (showHowToDialog) {
-        AlertDialog(
-            onDismissRequest = { showHowToDialog = false },
-            title = { Text(stringResource(R.string.identify_how_to_title)) },
-            text = {
-                Column {
-                    Text(stringResource(R.string.identify_how_to_body))
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(stringResource(R.string.identify_how_to_example), fontWeight = FontWeight.Bold)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showHowToDialog = false }) {
-                    Text(stringResource(R.string.action_ok))
-                }
-            }
-        )
-    }
-
-    Column(
-        modifier = Modifier
-            .wizardContentWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(stringResource(R.string.identify_title), style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            stringResource(R.string.identify_body),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        
-        Spacer(modifier = Modifier.height(32.dp))
-
-        RecoveryScreenLaptop(modifier = Modifier.fillMaxWidth().height(140.dp))
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        ElevatedCard(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+    StepLayout(
+        actions = {
+            Button(
+                onClick = ::submit,
+                enabled = ready && input.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().height(56.dp)
             ) {
-                // Dynamically find a match as the user types
-                val upperModel = typedModel.trim().uppercase()
-                val match = if (upperModel.isNotBlank()) {
-                    images.find {
-                        val hwidRegex = it.hwidmatch?.toRegex(RegexOption.IGNORE_CASE)
-                        (hwidRegex != null && hwidRegex.matches(upperModel)) || 
-                        it.model?.uppercase()?.contains(upperModel) == true ||
-                        it.hwids?.any { id -> id.uppercase() == upperModel } == true
-                    }
-                } else null
-
-                // Continue is shared by the button and the field's Done/Enter action,
-                // so a hardware keyboard can drive this step without touching the screen.
-                val submitModel = {
-                    if (match?.name != null) {
-                        haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                        onNext(match.name)
-                    } else {
-                        showError = true
-                    }
-                }
-
-                OutlinedTextField(
-                    value = typedModel,
-                    onValueChange = { 
-                        typedModel = it 
-                        showError = false
-                    },
-                    label = { Text(stringResource(R.string.identify_type_model)) },
-                    isError = showError,
-                    supportingText = if (showError) { { Text(stringResource(R.string.identify_model_not_found)) } } else null,
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { if (typedModel.isNotBlank()) submitModel() }),
-                    trailingIcon = {
-                        if (match != null) {
-                            Icon(
-                                imageVector = Icons.Filled.CheckCircle,
-                                contentDescription = stringResource(R.string.identify_valid_model),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    text = stringResource(R.string.identify_how_to_find),
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier
-                        .clickable { showHowToDialog = true }
-                        .padding(4.dp)
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Button(
-                    onClick = submitModel,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isLoading && typedModel.isNotBlank()
-                ) {
-                    Text(stringResource(R.string.action_continue))
+                if (catalog is CatalogState.Loading) {
+                    LoadingIndicator(Modifier.size(24.dp))
+                } else {
+                    Text(stringResource(R.string.identify_find), style = MaterialTheme.typography.titleMedium)
                 }
             }
+            OutlinedButton(onClick = onBrowse, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.identify_browse))
+            }
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        Text(stringResource(R.string.identify_or), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.outline)
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        OutlinedButton(
-            onClick = onSelectFromList,
+    ) {
+        RecoveryScreenLaptop(Modifier.fillMaxWidth().height(120.dp).padding(top = 8.dp))
+        StepTitle(stringResource(R.string.identify_title))
+        StepBody(stringResource(R.string.identify_body))
+        OutlinedTextField(
+            value = input,
+            onValueChange = { input = it; result = null },
+            label = { Text(stringResource(R.string.identify_field)) },
+            singleLine = true,
+            isError = result is IdentifyResult.NoMatch,
+            supportingText = (result as? IdentifyResult.NoMatch)?.let { miss ->
+                { Text(stringResource(R.string.identify_no_match, miss.input), Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+            },
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { submit() }),
             modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(stringResource(R.string.identify_select_from_list))
+        )
+        (result as? IdentifyResult.Several)?.let { several ->
+            Text(
+                stringResource(R.string.identify_several),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+            )
+            several.modelNames.forEach { name ->
+                ListItem(
+                    headlineContent = { Text(name) },
+                    modifier = Modifier.fillMaxWidth().clickable { onFound(name) }
+                )
+            }
         }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedButton(
-            onClick = onSelectLocalImage,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(stringResource(R.string.identify_use_local_image))
+        if (catalog is CatalogState.Unavailable) {
+            Text(stringResource(R.string.models_unavailable_title), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.error)
+            Text(stringResource(R.string.models_unavailable_body), style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = onRetry) { Text(stringResource(R.string.action_try_again)) }
         }
     }
 }
+

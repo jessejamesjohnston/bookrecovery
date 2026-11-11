@@ -1,87 +1,86 @@
 package ai.jessejohnston.bookmend.data
 
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
+
+/** Fetches a catalog's text. Tests serve fixtures instead. */
+fun interface CatalogFetcher {
+    @Throws(IOException::class)
+    fun get(url: String): String
+}
+
+/** Plain HTTPS GET with timeouts; non-200 is an error. */
+object HttpCatalogFetcher : CatalogFetcher {
+    override fun get(url: String): String {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 30_000
+        try {
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                throw IOException("HTTP ${connection.responseCode} for $url")
+            }
+            return connection.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            connection.disconnect()
+        }
+    }
+}
+
+sealed interface CatalogResult {
+    data class Loaded(val images: List<CatalogImage>) : CatalogResult
+
+    /** Nothing could be fetched; the screen offers to try again. */
+    data object Unavailable : CatalogResult
+}
 
 /**
- * Repository responsible for fetching the latest ChromeOS recovery image metadata
- * from official Google endpoints.
- *
- * This data source provides a comprehensive JSON list of all supported Chromebook
- * hardware models (hwids), channels (stable, beta, dev), and direct download URLs
- * for the zipped `.bin` payloads.
- *
- * It aggregates both standard ChromeOS models and CloudReady (ChromeOS Flex) models.
- *
- * The manifest is fetched once per process and cached: several wizard screens
- * (identify, model selection, channel selection, and the expanded-width detail
- * pane) all need the same ~2,500-entry list, and previously each of them
- * re-downloaded it. Access the repository through [RecoveryRepository.instance].
+ * Google's public recovery catalogs, fetched once per process per family and
+ * shared by every screen. Only public catalogs are read: ChromeOS (plus
+ * ChromeOS Flex) and the Googlebook catalog Google's Device Recovery Utility
+ * uses. A failed fetch isn't cached, so the next try gets a fresh chance.
  */
-class RecoveryRepository private constructor() {
+class RecoveryRepository(
+    private val fetcher: CatalogFetcher = HttpCatalogFetcher,
+    private val io: CoroutineDispatcher = Dispatchers.IO,
+) {
 
     companion object {
-        /** Process-wide instance so every screen shares one cached manifest. */
-        val instance = RecoveryRepository()
-    }
+        /** Process-wide instance so every screen shares one cached catalog. */
+        val instance by lazy { RecoveryRepository() }
 
-    private val RECOVERY_URL = "https://dl.google.com/dl/edgedl/chromeos/recovery/recovery2.json"
-    private val CLOUDREADY_URL = "https://dl.google.com/dl/edgedl/chromeos/recovery/cloudready_recovery2.json"
+        const val CHROMEOS_URL = "https://dl.google.com/dl/edgedl/chromeos/recovery/recovery2.json"
+        const val FLEX_URL = "https://dl.google.com/dl/edgedl/chromeos/recovery/cloudready_recovery2.json"
+        const val GOOGLEBOOK_URL = "https://dl.google.com/dl/edgedl/device/recovery/production_recovery.json"
+    }
 
     private val mutex = Mutex()
-    private var cached: List<RecoveryImage>? = null
+    private val cache = mutableMapOf<DeviceFamily, List<CatalogImage>>()
 
-    suspend fun fetchRecoveryImages(): List<RecoveryImage> = mutex.withLock {
-        cached?.let { return@withLock it }
-        val images = fetchFromNetwork()
-        // An empty result means the fetch failed; don't cache it, so the next
-        // screen gets another chance once connectivity returns.
-        if (images.isNotEmpty()) {
-            cached = images
+    suspend fun load(family: DeviceFamily): CatalogResult = mutex.withLock {
+        cache[family]?.let { return@withLock CatalogResult.Loaded(it) }
+        val images = withContext(io) {
+            when (family) {
+                DeviceFamily.CHROMEBOOK ->
+                    fetch(CHROMEOS_URL) { CatalogParser.chromeOs(it, isFlex = false) } +
+                        fetch(FLEX_URL) { CatalogParser.chromeOs(it, isFlex = true) }
+                DeviceFamily.GOOGLEBOOK -> fetch(GOOGLEBOOK_URL) { CatalogParser.googlebook(it) }
+            }
         }
-        images
+        if (images.isEmpty()) return@withLock CatalogResult.Unavailable
+        cache[family] = images
+        CatalogResult.Loaded(images)
     }
 
-    private suspend fun fetchFromNetwork(): List<RecoveryImage> = withContext(Dispatchers.IO) {
-        val images = mutableListOf<RecoveryImage>()
+    private inline fun fetch(url: String, parse: (String) -> List<CatalogImage>): List<CatalogImage> =
         try {
-            val listType = object : TypeToken<List<RecoveryImage>>() {}.type
-            val gson = Gson()
-
-            // Fetch normal ChromeOS recovery
-            val url = URL(RECOVERY_URL)
-            val connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                val reader = InputStreamReader(connection.inputStream)
-                val result: List<RecoveryImage> = gson.fromJson(reader, listType)
-                images.addAll(result)
-                reader.close()
-            }
-            connection.disconnect()
-
-            // Fetch CloudReady recovery
-            val cloudUrl = URL(CLOUDREADY_URL)
-            val cloudConnection = cloudUrl.openConnection() as HttpURLConnection
-            cloudConnection.requestMethod = "GET"
-            if (cloudConnection.responseCode == HttpURLConnection.HTTP_OK) {
-                val reader = InputStreamReader(cloudConnection.inputStream)
-                val result: List<RecoveryImage> = gson.fromJson(reader, listType)
-                images.addAll(result)
-                reader.close()
-            }
-            cloudConnection.disconnect()
-
-        } catch (e: Exception) {
-            e.printStackTrace()
+            parse(fetcher.get(url))
+        } catch (e: IOException) {
+            emptyList()
         }
-        return@withContext images
-    }
 }

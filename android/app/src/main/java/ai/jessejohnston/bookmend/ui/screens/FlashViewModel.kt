@@ -2,14 +2,13 @@ package ai.jessejohnston.bookmend.ui.screens
 
 import android.app.Application
 import android.content.Context
-import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ai.jessejohnston.bookmend.R
 import ai.jessejohnston.bookmend.usb.FlashNotificationController
 import ai.jessejohnston.bookmend.usb.FlashNotificationController.Phase
-import ai.jessejohnston.bookmend.usb.ExpectedDigest
+import ai.jessejohnston.bookmend.ui.FlashRequest
 import ai.jessejohnston.bookmend.usb.UsbFlasher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,12 +36,16 @@ data class FlashUiState(
     val isFinished: Boolean = false,
     val hasError: Boolean = false,
     val canRetry: Boolean = false,
+    /** How far the finished flash was checked; null until it finishes well. */
+    val verification: UsbFlasher.Verification? = null,
+    /** Rounded seconds left in the current phase, once it can be estimated. */
+    val secondsLeft: Long? = null,
 )
 
 /**
  * ViewModel owning the flash execution state machine:
  *
- *   (erasing) -> flashing -> verifying -> success / error
+ *   flashing -> verifying -> success / error
  *                  |             |
  *                  |             +-- skip -> success (unverified; skip != fail)
  *                  +-- cancel -> erasing (reset) -> success
@@ -61,27 +64,25 @@ data class FlashUiState(
  * survives rotation/resize — and [onCleared] cancels the flasher, so leaving
  * the screen no longer orphans a write loop that keeps running blind.
  *
- * @param device The physical USB device the user has authorized writing to.
- * @param url The local or remote URL pointing to the recovery image .zip file.
- * @param expectedSha1 Manifest SHA-1 of the download, when flashing an official
- *   image; null for local files.
- * @param eraseFirst If true, a 3-second erase simulation runs before flashing.
+ * @param request The drive, the image and its catalog checksum and size.
+ * @param flasher Replaceable so tests can flash a simulated drive.
  */
 class FlashViewModel(
     application: Application,
-    private val device: UsbDevice,
-    private val url: String,
-    private val expectedSha1: String?,
-    private val expectedImageSize: Long?,
-    private val eraseFirst: Boolean,
+    private val request: FlashRequest,
+    private val flasher: UsbFlasher = UsbFlasher(
+        application.getSystemService(Context.USB_SERVICE) as UsbManager,
+        application
+    ),
+    private val notifications: FlashNotificationController = FlashNotificationController(application),
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : AndroidViewModel(application) {
 
-    private val usbManager = application.getSystemService(Context.USB_SERVICE) as UsbManager
-    private val flasher = UsbFlasher(usbManager, application)
-    private val notifications = FlashNotificationController(application)
+    private val device = request.device
+    private val eta = EtaEstimator()
 
     private val _uiState = MutableStateFlow(
-        FlashUiState(stepText = application.getString(R.string.flash_step_starting), isErasing = eraseFirst)
+        FlashUiState(stepText = application.getString(R.string.flash_step_starting))
     )
     val uiState: StateFlow<FlashUiState> = _uiState.asStateFlow()
 
@@ -106,14 +107,10 @@ class FlashViewModel(
 
         notifications.createChannel()
         // Claim foreground priority once at the beginning. This prevents
-        // ForegroundServiceStartNotAllowedException if the user minimizes during eraseFirst.
+        // ForegroundServiceStartNotAllowedException if the user leaves mid-flash.
         notifications.startKeepAlive()
 
-        if (eraseFirst) {
-            eraseThenFlash()
-        } else {
-            flash()
-        }
+        flash()
     }
 
     /**
@@ -139,6 +136,7 @@ class FlashViewModel(
      * trusted, so the only honest recovery is writing (and verifying) again.
      */
     fun retryFlash() {
+        eta.reset()
         _uiState.update {
             FlashUiState(stepText = string(R.string.flash_step_starting))
         }
@@ -178,27 +176,6 @@ class FlashViewModel(
     }
 
     /**
-     * Real erase (zeroing the drive's partition structures) followed by the
-     * flash. Replaces the previous 3-second simulation that wrote nothing.
-     */
-    private fun eraseThenFlash() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(stepText = string(R.string.flash_step_erasing), isErasing = true) }
-            val result = flasher.eraseDevice(device) { p ->
-                _uiState.update { it.copy(progress = p) }
-                notifications.postProgress(p, Phase.ERASING)
-            }
-            when (result) {
-                is UsbFlasher.EraseResult.Error -> finishWithError(result.message, canRetry = false)
-                is UsbFlasher.EraseResult.Done -> {
-                    _uiState.update { it.copy(isErasing = false, progress = 0f) }
-                    flash()
-                }
-            }
-        }
-    }
-
-    /**
      * The reset path after a cancelled write: really zero the partition
      * structures so nothing tries to mount the half-written image, then land
      * on the reset summary.
@@ -226,16 +203,19 @@ class FlashViewModel(
         viewModelScope.launch {
             val result = flasher.flashImageToUsb(
                 device = device,
-                url = url,
-                expectedDownloadDigest = expectedSha1?.let { ExpectedDigest.sha1(it) },
-                expectedImageSize = expectedImageSize,
+                url = request.url,
+                expectedDownloadDigest = request.digest,
+                expectedImageSize = request.imageBytes,
                 onStep = { step -> _uiState.update { it.copy(stepText = step) } },
                 onProgress = { p ->
-                    _uiState.update { it.copy(progress = p, isVerifying = false) }
+                    val left = eta.update(clock(), p)
+                    _uiState.update { it.copy(progress = p, isVerifying = false, secondsLeft = left) }
                     notifications.postProgress(p, Phase.FLASHING)
                 },
                 onVerifyProgress = { p ->
-                    _uiState.update { it.copy(progress = p, isVerifying = true) }
+                    if (!_uiState.value.isVerifying) eta.reset()
+                    val left = eta.update(clock(), p)
+                    _uiState.update { it.copy(progress = p, isVerifying = true, secondsLeft = left) }
                     notifications.postProgress(p, Phase.VERIFYING)
                 }
             )
@@ -259,7 +239,7 @@ class FlashViewModel(
                         UsbFlasher.Verification.SKIPPED -> string(R.string.flash_success)
                     }
                     _uiState.update {
-                        it.copy(stepText = message, progress = 1f, isVerifying = false, isFinished = true)
+                        it.copy(stepText = message, progress = 1f, isVerifying = false, isFinished = true, verification = result.verification, secondsLeft = null)
                     }
                     notifications.stopKeepAlive()
                     if (isBackgrounded) {

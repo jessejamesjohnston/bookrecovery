@@ -2,166 +2,189 @@
 <resources>
     <string name="app_name">Bookmend</string>
 
-    <!-- Flasher step announcements -->
-    <string name="step_opening_local">Opening local image…</string>
-    <string name="step_connecting_server">Connecting to download server…</string>
-    <string name="step_unpacking_local">Unpacking local image…</string>
-    <string name="step_downloading_unpacking">Downloading and unpacking image…</string>
-    <string name="step_reading_local">Reading local image…</string>
-    <string name="step_downloading">Downloading image…</string>
-    <string name="step_writing_usb">Writing to USB…</string>
-    <string name="step_verifying">Verifying…</string>
-
-    <!-- Flasher errors -->
-    <string name="error_open_local">Could not open the selected local file. It may have been moved or deleted.</string>
-    <string name="error_http_server">Download server returned an error: HTTP %d</string>
-    <string name="error_invalid_zip">The selected ZIP file does not contain a valid ChromeOS recovery image (.bin).</string>
-    <string name="error_usb_permission">Android denied permission to access the USB drive. Please replug the drive and grant permission.</string>
-    <string name="error_not_mass_storage">The selected USB drive is not recognized as a standard Mass Storage device.</string>
-    <string name="error_claim_interface">Could not claim the USB drive. Another app might be using it, or it is busy.</string>
-    <string name="error_hardware_write">Hardware write error. The USB drive might be corrupted, full, or write-protected.</string>
-    <string name="error_drive_too_small">Hardware write error at the end of the drive. The USB drive might not be large enough.</string>
-    <string name="error_verification_failed">Verification failed. The data written to the USB drive could not be read back correctly.</string>
-    <string name="error_authenticity_failed">The downloaded image did not match Google\'s published checksum. The download may have been corrupted.</string>
-    <string name="error_erase_failed">Could not erase the drive. It may be write-protected, busy, or disconnected.</string>
-    <string name="error_unexpected">An unexpected error occurred: %s</string>
-
-    <!-- Top bar -->
-    <string name="title_step_of">Step %1$d of %2$d</string>
-    <string name="action_home">Home</string>
+    <!-- Shell -->
     <string name="action_back">Back</string>
+    <string name="action_home">Start over</string>
     <string name="action_more">More options</string>
-    <string name="action_erase_media">Erase recovery media</string>
-
-    <!-- Shared actions -->
-    <string name="action_continue">Continue</string>
+    <string name="action_try_again">Try again</string>
     <string name="action_ok">OK</string>
-    <string name="action_back_to_home">Back to Home</string>
+    <string name="action_back_to_home">Back to start</string>
+    <string name="menu_erase_drive">Erase a USB drive</string>
+    <string name="menu_use_file">Use an image file</string>
+    <string name="menu_licenses">Open-source licenses</string>
+    <string name="step_label_device">Device</string>
+    <string name="step_label_drive">Drive</string>
+    <string name="step_label_write">Write</string>
+    <string name="step_progress_description">Step %1$d of %2$d: %3$s</string>
 
-    <!-- Welcome screen -->
-    <string name="welcome_title">Create recovery media for your Book</string>
-    <string name="welcome_body">You will need an 8 GB or larger USB flash drive or SD card that you don\'t mind erasing.</string>
-    <string name="welcome_get_started">Get started</string>
+    <!-- Welcome -->
+    <string name="welcome_title">Fix a Chromebook or Googlebook with your phone</string>
+    <string name="welcome_body">Bookmend makes a recovery drive from Google\'s official images, right on your phone. No second computer needed.</string>
+    <string name="welcome_need_title">What you\'ll need</string>
+    <string name="welcome_need_drive">A USB drive you can erase: 8 GB or more for a Chromebook, 32 GB or more for a Googlebook</string>
+    <string name="welcome_need_adapter">A USB-C adapter, if the drive doesn\'t plug into your phone</string>
+    <string name="welcome_need_network">Wi-Fi. Images are 1 to 8 GB.</string>
+    <string name="welcome_start">Get started</string>
 
-    <!-- Identify screen -->
-    <string name="identify_title">Identify your Book</string>
-    <string name="identify_body">Enter the model number of the Book you want to recover.</string>
-    <string name="identify_type_model">Type model number</string>
-    <string name="identify_model_not_found">Model not found. Please check and try again.</string>
-    <string name="identify_valid_model">Valid Model</string>
-    <string name="identify_how_to_find">How to find this?</string>
-    <string name="identify_how_to_title">How to find your model number</string>
-    <string name="identify_how_to_body">The model number is located at the bottom of the recovery screen on your Book.</string>
-    <string name="identify_how_to_example">Example: \nPEPPY C6A-V7C-A5Q</string>
-    <string name="identify_or">OR</string>
-    <string name="identify_select_from_list">Select a model from a list</string>
-    <string name="identify_use_local_image">Use local image</string>
+    <!-- Family -->
+    <string name="family_title">What are you recovering?</string>
+    <string name="family_body">Your device\'s screen names it when recovery is needed.</string>
+    <string name="family_chromebook">Chromebook</string>
+    <string name="family_chromebook_hint">Says \"ChromeOS is missing or damaged\"</string>
+    <string name="family_googlebook">Googlebook</string>
+    <string name="family_googlebook_hint">Says \"Googlebook OS is missing or damaged\"</string>
 
-    <!-- Select model screen -->
-    <string name="select_model_body">Select the manufacturer and product.</string>
-    <string name="select_model_manufacturer_label">Select a manufacturer</string>
-    <string name="select_model_product_label">Select a product</string>
-    <string name="select_model_search">Search models</string>
-    <string name="select_model_pick_prompt">Select a model from the list to see available channels.</string>
+    <!-- Identify (Chromebook) -->
+    <string name="identify_title">Find your Chromebook</string>
+    <string name="identify_body">Type the model name shown at the bottom of your Chromebook\'s recovery screen.</string>
+    <string name="identify_field">Model name, like SPHERION C4B-K3E</string>
+    <string name="identify_find">Find my Chromebook</string>
+    <string name="identify_browse">Browse all models</string>
+    <string name="identify_no_match">No model matches \"%1$s\". Check the spelling, or browse the list.</string>
+    <string name="identify_several">Several models match. Pick yours from the list.</string>
 
-    <!-- Select channel screen -->
-    <string name="select_channel_title">Select a channel</string>
-    <string name="select_channel_body">Choose the recovery channel for %1$s.</string>
-    <string name="select_channel_none">No channels found for this model.</string>
-    <string name="select_channel_default_label">STABLE</string>
+    <!-- Model browser -->
+    <string name="models_title_chromebook">Choose your Chromebook</string>
+    <string name="models_title_googlebook">Choose your Googlebook</string>
+    <string name="models_search">Search models</string>
+    <string name="models_none_found">No models match your search.</string>
+    <string name="models_googlebook_note">Google adds Googlebooks to its recovery catalog as they ship. If yours isn\'t here yet, Google\'s recovery tool can\'t make a drive for it either.</string>
+    <string name="models_pick_prompt">Pick a model to see its recovery images.</string>
+    <string name="models_loading">Getting Google\'s recovery catalog</string>
+    <string name="models_unavailable_title">Can\'t reach Google\'s catalog</string>
+    <string name="models_unavailable_body">Check your connection and try again.</string>
+    <string name="models_flex_label">ChromeOS Flex</string>
+    <string name="models_channel_title">Choose a version</string>
+    <string name="models_channel_recommended">Recommended</string>
+    <string name="models_channel_stable">Stable</string>
+    <string name="models_channel_beta">Beta</string>
+    <string name="models_channel_dev">Developer</string>
+    <string name="models_channel_lts">Long-term support</string>
+    <string name="models_channel_ltc">Long-term support candidate</string>
+    <string name="models_channel_ltr">Long-term support release</string>
+    <string name="models_channel_version">Version %1$s</string>
+    <string name="models_size_line">%1$s download · needs a %2$s drive</string>
+    <string name="models_size_line_unknown">Needs a %1$s drive</string>
+    <string name="models_select_version">Use this version</string>
 
-    <!-- Select drive screen -->
-    <string name="select_drive_title">Insert your USB flash drive or SD card</string>
-    <string name="select_drive_body">Select the media you\'d like to use.</string>
-    <string name="select_drive_empty">Please insert a USB drive.</string>
-    <string name="select_drive_unknown_device">Unknown USB Device</string>
-    <string name="select_drive_manufacturer">Manufacturer: %1$s</string>
-    <string name="select_drive_unknown_manufacturer">Unknown</string>
-    <string name="erase_prompt_title">Erase drive before proceeding?</string>
-    <string name="erase_prompt_body">Do you want to erase the drive before writing the recovery image? This clears the drive\'s partition information and can resolve issues with previously used media.</string>
-    <string name="erase_prompt_confirm">Yes, erase first</string>
-    <string name="erase_prompt_skip">Skip and proceed</string>
-    <string name="permission_required_title">Permission Required</string>
-    <string name="permission_denied_usb">Permission denied for USB device.</string>
+    <!-- Drive -->
+    <string name="drive_title">Plug in a USB drive</string>
+    <string name="drive_body">Everything on it will be erased. Use an adapter if it doesn\'t fit your phone.</string>
+    <string name="drive_requirement">Needs %1$s or more</string>
+    <string name="drive_empty_title">Waiting for a USB drive</string>
+    <string name="drive_empty_body">Plug one in. It shows up here on its own.</string>
+    <string name="drive_unknown_name">USB drive</string>
+    <string name="drive_size">%1$s</string>
+    <string name="drive_checking">Checking size…</string>
+    <string name="drive_too_small">%1$s, too small for this image</string>
+    <string name="drive_tap_to_check">Tap to check its size</string>
+    <string name="drive_confirm_title">Erase %1$s?</string>
+    <string name="drive_confirm_body">Everything on this drive will be erased and replaced with the recovery image for %1$s.</string>
+    <string name="drive_confirm_hold">Hold to erase and write</string>
+    <string name="drive_confirm_holding">Keep holding…</string>
+    <string name="drive_confirm_a11y_action">Erase and write</string>
+    <string name="drive_cancel">Cancel</string>
+    <string name="permission_required_title">Permission needed</string>
+    <string name="permission_denied_usb">Bookmend needs permission to use the USB drive. Unplug it, plug it back in, and allow access.</string>
 
-    <!-- Erase screen -->
-    <string name="erase_step">Erasing…</string>
-    <string name="erase_success">Success! Your recovery media has been erased.</string>
-    <string name="erase_success_detail">The drive\'s partition information was cleared. Your computer may ask to format it before its next use.</string>
-    <string name="erase_do_not_remove">Please do not remove your recovery media.</string>
+    <!-- Flash steps (UsbFlasher) -->
+    <string name="step_opening_local">Opening the image file…</string>
+    <string name="step_connecting_server">Connecting to Google…</string>
+    <string name="step_unpacking_local">Unpacking the image file…</string>
+    <string name="step_downloading_unpacking">Downloading and writing…</string>
+    <string name="step_reading_local">Reading the image file…</string>
+    <string name="step_downloading">Downloading and writing…</string>
+    <string name="step_writing_usb">Writing to the drive…</string>
+    <string name="step_verifying">Checking every byte…</string>
+
+    <!-- Flash errors (UsbFlasher) -->
+    <string name="error_open_local">Couldn\'t open the image file. It may have been moved or deleted.</string>
+    <string name="error_http_server">Google\'s server answered with an error (HTTP %d). Try again in a few minutes.</string>
+    <string name="error_invalid_zip">That file doesn\'t contain a recovery image (.bin).</string>
+    <string name="error_usb_permission">Android didn\'t allow access to the drive. Unplug it, plug it back in, and allow access.</string>
+    <string name="error_not_mass_storage">That isn\'t a USB storage drive.</string>
+    <string name="error_claim_interface">Couldn\'t open the drive. Another app may be using it.</string>
+    <string name="error_hardware_write">The drive stopped accepting data. It may be faulty or write-protected. Try another drive.</string>
+    <string name="error_drive_too_small">This drive is too small for the image. Use a bigger drive.</string>
+    <string name="error_verification_failed">The drive didn\'t read back what was written, so it can\'t be trusted. Try again, or use another drive.</string>
+    <string name="error_authenticity_failed">The download didn\'t match Google\'s published checksum, so it may be damaged. Try again.</string>
+    <string name="error_erase_failed">Couldn\'t erase the drive. It may be write-protected, busy, or unplugged.</string>
+    <string name="error_unexpected">Something went wrong: %s</string>
 
     <!-- Flash screen -->
     <string name="flash_step_starting">Starting…</string>
-    <string name="flash_step_erasing">Erasing media…</string>
-    <string name="flash_reset_success">Success! Your USB has been reset.</string>
-    <string name="flash_success">Success! Your recovery media is ready.</string>
-    <string name="flash_success_verified">Success! Your recovery media is ready and matches Google\'s published checksum.</string>
-    <string name="flash_success_write_verified">Success! Your recovery media is ready. Write verification passed.</string>
-    <string name="flash_skip_verification">Skip verification</string>
-    <string name="flash_retry">Retry flash</string>
+    <string name="flash_step_erasing">Erasing the drive…</string>
+    <string name="flash_reset_success">The drive has been reset.</string>
+    <string name="flash_success">Your recovery drive is ready.</string>
+    <string name="flash_success_verified">Your recovery drive is ready, and it matches Google\'s published checksum.</string>
+    <string name="flash_success_write_verified">Your recovery drive is ready. Every byte was checked.</string>
+    <string name="flash_skip_verification">Skip the check</string>
+    <string name="flash_retry">Try again</string>
     <string name="flash_error">Error: %1$s</string>
-    <string name="flash_cancel_and_reset">Cancel and reset USB Stick</string>
-    <string name="flash_play_game">Waiting is boring — tap to play</string>
-    <string name="flash_game_description">Chrome dinosaur game. Tap or press space to jump, swipe down to duck.</string>
-    <string name="flash_success_icon">Success</string>
-    <string name="flash_error_icon">Error</string>
+    <string name="flash_cancel_and_reset">Stop and reset the drive</string>
+    <string name="flash_play_game">Play a game while you wait</string>
+    <string name="flash_success_icon">Ready</string>
+    <string name="flash_error_icon">Didn\'t finish</string>
     <string name="flash_progress_percent">%1$d%%</string>
+    <string name="flash_time_left">About %1$s left</string>
+    <string name="flash_time_estimating">Estimating time left…</string>
+    <string name="flash_keep_plugged">Keep the drive plugged in. You can leave Bookmend; it keeps going.</string>
+    <string name="flash_verified_chip">Matches Google\'s checksum</string>
+    <string name="flash_checked_chip">Every byte checked</string>
 
-    <!-- Flash notifications -->
-    <string name="notif_channel_name">Flash Progress</string>
-    <string name="notif_preparing_title">Preparing to flash</string>
-    <string name="notif_preparing_text">Initializing…</string>
-    <string name="notif_preparing_chip">Started</string>
-    <string name="notif_percent_complete">%1$.1f%% complete</string>
-    <string name="notif_erasing_title">Erasing media…</string>
+    <!-- After-flash guide -->
+    <string name="guide_title">Now recover your %1$s</string>
+    <string name="guide_unplug">Unplug the drive from your phone.</string>
+    <string name="guide_disconnect">On the device you\'re recovering, disconnect anything plugged in, like a mouse or an external drive.</string>
+    <string name="guide_keys_chromebook">Press and hold Esc and Refresh, then press Power. Let go of Power when the screen lights up. On a tablet, hold Volume Up, Volume Down and Power for 10 seconds.</string>
+    <string name="guide_keys_googlebook">Press and hold Esc and F2, then press and quickly release Power. Let go of Esc and F2 when the screen lights up.</string>
+    <string name="guide_insert">When the recovery screen appears, choose to recover using a USB drive, plug in your drive, and follow the steps on screen.</string>
+    <string name="guide_erases">Recovery erases everything on the device, including downloaded files.</string>
+    <string name="guide_device_chromebook">Chromebook</string>
+    <string name="guide_device_googlebook">Googlebook</string>
+
+    <!-- Erase -->
+    <string name="erase_step">Erasing…</string>
+    <string name="erase_success">The drive has been erased.</string>
+    <string name="erase_success_detail">Its partition information was cleared. A computer may offer to format it the next time you plug it in.</string>
+    <string name="erase_do_not_remove">Keep the drive plugged in.</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_name">Recovery drive progress</string>
+    <string name="notif_preparing_title">Getting ready</string>
+    <string name="notif_preparing_text">Starting…</string>
+    <string name="notif_preparing_chip">Starting</string>
+    <string name="notif_percent_complete">%1$.1f%% written</string>
+    <string name="notif_erasing_title">Erasing the drive</string>
     <string name="notif_erasing_chip">Erasing</string>
-    <string name="notif_verifying_title">Verifying media…</string>
-    <string name="notif_verifying_chip">Verifying</string>
-    <string name="notif_success_title">Recovery Media Ready</string>
-    <string name="notif_error_title">Error creating media</string>
+    <string name="notif_verifying_title">Checking the drive</string>
+    <string name="notif_verifying_chip">Checking</string>
+    <string name="notif_success_title">Recovery drive ready</string>
+    <string name="notif_error_title">The recovery drive didn\'t finish</string>
 
-    <!-- Decorative on-screen quips rotated beneath the real status line during
-         long operations. Never replace the technical status; hidden from
-         accessibility services entirely (the real status is what announces). -->
+    <!-- Licenses -->
+    <string name="licenses_title">Open-source licenses</string>
+    <string name="licenses_intro">Bookmend is free software under the Apache License 2.0. It is built on these projects, used under their licenses.</string>
+    <string name="licenses_show">Show license</string>
+    <string name="licenses_hide">Hide license</string>
+    <string name="licenses_footer">Copyright 2026 Jesse Johnston. Bookmend began as Book Recovery Utility by Alexander (github.com/kuscher). Not affiliated with or endorsed by Google or any employer.</string>
+
     <string-array name="flash_quips_flashing">
-        <item>Convincing electrons to line up…</item>
-        <item>Politely asking the USB drive to hold still…</item>
-        <item>Un-bricking at the speed of SCSI…</item>
-        <item>Reticulating boot partitions…</item>
-        <item>This is faster than mailing a USB stick.</item>
-        <item>Somewhere, a Book is about to feel much better.</item>
+        <item>The image is Google\'s own. Bookmend just carries the bytes.</item>
+        <item>Your phone is doing a laptop\'s job right now.</item>
+        <item>Long images take a while. That\'s normal.</item>
     </string-array>
     <string-array name="flash_quips_verifying">
-        <item>Trust, but verify. Currently verifying…</item>
-        <item>Reading it all back. Twice would be paranoid.</item>
-        <item>Math is happening. SHA-1 of it.</item>
-        <item>Checking every byte, then checking again.</item>
+        <item>Reading everything back, to be sure.</item>
+        <item>A checked drive is one less thing to wonder about.</item>
     </string-array>
     <string-array name="flash_quips_erasing">
-        <item>Sweeping up old partitions…</item>
-        <item>Asking the old bits to leave. Politely.</item>
-        <item>Making room. It\'s very zen.</item>
+        <item>Clearing the old partitions.</item>
     </string-array>
-
-    <!-- Rotating titles shown on the flash notification. The chips array holds the
-         compact variants that fit the API 36 status-bar Live Update chip; the two
-         arrays are index-aligned and must stay the same length. -->
     <string-array name="flash_fun_words">
-        <item>Flashing…</item>
-        <item>Fluxabilating…</item>
-        <item>Gone fishing…</item>
-        <item>Crunching bytes…</item>
-        <item>Reticulating splines…</item>
-        <item>Writing magic…</item>
-        <item>Doing the heavy lifting…</item>
+        <item>Writing…</item>
     </string-array>
     <string-array name="flash_fun_chips">
-        <item>Working</item>
         <item>Writing</item>
-        <item>Wait…</item>
-        <item>Almost</item>
-        <item>Hold on</item>
-        <item>Steady</item>
-        <item>Busy</item>
     </string-array>
 </resources>

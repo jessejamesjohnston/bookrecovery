@@ -74,6 +74,7 @@ dependencies {
     // material3 stopped depending on material-icons transitively in newer BOMs;
     // the icons artifacts are frozen at 1.7.x and are no longer BOM-managed.
     implementation("androidx.compose.material:material-icons-core:1.7.8")
+    implementation("androidx.compose.material:material-icons-extended:1.7.8")
 
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.9.8")

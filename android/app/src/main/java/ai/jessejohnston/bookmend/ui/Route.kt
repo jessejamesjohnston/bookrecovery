@@ -3,34 +3,33 @@ package ai.jessejohnston.bookmend.ui
 import android.net.Uri
 
 /**
- * Type-safe definitions of every destination in the recovery wizard's navigation graph.
- *
- * Each object carries the route [pattern] registered with the NavHost. Destinations
- * without arguments navigate using the pattern directly; [SelectChannel] takes the
- * selected model name as a path argument and exposes [SelectChannel.forModel] to build
- * a concrete navigation target (URL-encoding the name, since model names can contain
- * spaces and slashes).
- *
- * Centralizing the routes here keeps `RecoveryApp`'s graph, the top-bar step indicator,
- * and every `navigate()` call in agreement, instead of scattering string literals that
- * can silently drift apart.
+ * Every destination in the wizard. [step] places a destination in the
+ * three-part indicator (Device, Drive, Write); 0 means it sits outside the
+ * wizard (welcome, tools). Centralized so the graph, the indicator and every
+ * navigate() call agree.
  */
-sealed class Route(val pattern: String) {
+sealed class Route(val pattern: String, val step: Int = 0) {
     data object Welcome : Route("welcome")
-    data object Identify : Route("identify")
-    data object SelectModel : Route("select_model")
-    data object SelectDrive : Route("select_drive")
+    data object Family : Route("family", step = 1)
+    data object Identify : Route("identify", step = 1)
+    data object Drive : Route("drive", step = 2)
+    data object Flash : Route("flash", step = 3)
     data object EraseDrive : Route("erase_drive")
-    data object Flash : Route("flash")
     data object EraseFlash : Route("erase_flash")
+    data object Licenses : Route("licenses")
 
-    data object SelectChannel : Route("select_channel/{$ARG_MODEL_NAME}") {
-        /** Builds the concrete route for navigating to the channel list of [modelName]. */
-        fun forModel(modelName: String): String = "select_channel/${Uri.encode(modelName)}"
+    /** The model browser, optionally opened on a search. */
+    data object Models : Route("models?$ARG_QUERY={$ARG_QUERY}", step = 1) {
+        fun withQuery(query: String? = null): String =
+            if (query.isNullOrBlank()) "models" else "models?$ARG_QUERY=${Uri.encode(query)}"
     }
 
     companion object {
-        /** Name of the model-name path argument used by [SelectChannel]. */
-        const val ARG_MODEL_NAME = "modelName"
+        const val ARG_QUERY = "query"
+        const val STEPS = 3
+
+        val all = listOf(Welcome, Family, Identify, Models, Drive, Flash, EraseDrive, EraseFlash, Licenses)
+
+        fun of(pattern: String?): Route? = all.firstOrNull { it.pattern == pattern }
     }
 }

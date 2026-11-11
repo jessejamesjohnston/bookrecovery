@@ -2,7 +2,9 @@ package ai.jessejohnston.bookmend.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.hardware.usb.UsbDevice
+import ai.jessejohnston.bookmend.ui.FlashRequest
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import android.os.Build
 import android.provider.Settings
 import android.view.ViewTreeObserver
@@ -62,21 +64,13 @@ import androidx.window.core.layout.WindowSizeClass
  */
 @Composable
 fun FlashScreen(
-    url: String,
-    device: UsbDevice,
-    expectedSha1: String? = null,
-    expectedImageSize: Long? = null,
-    eraseFirst: Boolean = false,
+    request: FlashRequest,
     onFinish: () -> Unit
 ) {
     val viewModel: FlashViewModel = viewModel {
         FlashViewModel(
             application = checkNotNull(this[AndroidViewModelFactory.APPLICATION_KEY]),
-            device = device,
-            url = url,
-            expectedSha1 = expectedSha1,
-            expectedImageSize = expectedImageSize,
-            eraseFirst = eraseFirst
+            request = request
         )
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -172,7 +166,11 @@ fun FlashScreen(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(vertical = 24.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .navigationBarsPadding()
+            .padding(vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -254,10 +252,27 @@ fun FlashScreen(
                     amplitude = { p -> if (p >= 1f) 0f else 1f },
                     modifier = Modifier.fillMaxWidth()
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = stringResource(R.string.flash_progress_percent, (uiState.progress * 100).toInt()),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = uiState.secondsLeft?.let { stringResource(R.string.flash_time_left, formatDuration(it)) }
+                            ?: stringResource(R.string.flash_time_estimating),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Text(
-                    text = stringResource(R.string.flash_progress_percent, (uiState.progress * 100).toInt()),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 8.dp)
+                    stringResource(R.string.flash_keep_plugged),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 12.dp)
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 if (uiState.isVerifying) {
@@ -283,6 +298,12 @@ fun FlashScreen(
                     modifier = Modifier.padding(top = 8.dp)
                 )
             } else {
+                if (!uiState.hasError) {
+                    uiState.verification?.let { VerificationChip(it) }
+                    request.family?.takeIf { uiState.verification != null }?.let { family ->
+                        AfterFlashGuide(family, Modifier.padding(vertical = 24.dp))
+                    }
+                }
                 if (uiState.canRetry) {
                     Button(onClick = { viewModel.retryFlash() }) {
                         Text(stringResource(R.string.flash_retry))
