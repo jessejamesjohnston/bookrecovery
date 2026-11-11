@@ -22,8 +22,8 @@ class CatalogTest {
         assertEquals(DeviceFamily.CHROMEBOOK, stable.family)
         assertEquals("Acer", stable.manufacturer)
         assertEquals(ExpectedDigest.sha1("aa11"), stable.digest)
-        assertEquals(2147483648L, stable.imageBytes)
-        assertEquals(1200000000L, stable.downloadBytes)
+        assertEquals(4500000000L, stable.imageBytes)
+        assertEquals(1700000000L, stable.downloadBytes)
         assertEquals("16700.68.0", stable.version)
     }
 

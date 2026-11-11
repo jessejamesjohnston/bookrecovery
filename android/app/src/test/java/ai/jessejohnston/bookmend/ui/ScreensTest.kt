@@ -243,14 +243,14 @@ class ScreensTest {
             DriveItem("a", "SanDisk Ultra", DriveCheck.NotChecked),
             DriveItem("b", "Kingston DataTraveler", DriveCheck.Checking),
             DriveItem("c", "Samsung BAR", DriveCheck.Done(DriveSize.Known(64_000_000_000))),
-            DriveItem("d", "Old stick", DriveCheck.Done(DriveSize.Known(16_000_000_000))),
+            DriveItem("d", "Old stick", DriveCheck.Done(DriveSize.Known(4_000_000_000))),
             DriveItem("e", "Card reader", DriveCheck.Done(DriveSize.Unknown)),
             DriveItem("f", "Busy drive", DriveCheck.Done(DriveSize.Unusable("Another app is using it."))),
         )
         show {
-            DrivePicker(drives, 19_069_493_760, "Acer Googlebook 14", false, null, false, { selected += it }, {}, {}, {})
+            DrivePicker(drives, 4_500_000_000, "Acer Chromebook 514", false, null, false, { selected += it }, {}, {}, {})
         }
-        for (text in listOf(s(R.string.drive_tap_to_check), s(R.string.drive_checking), "64 GB", s(R.string.drive_too_small, "16 GB"), "Another app is using it.")) {
+        for (text in listOf(s(R.string.drive_tap_to_check), s(R.string.drive_checking), "64 GB", s(R.string.drive_too_small, "4 GB"), "Another app is using it.")) {
             assertTrue(text, compose.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
         }
         capture("drives")
@@ -263,9 +263,9 @@ class ScreensTest {
         var confirmed: String? = null
         var dismissed = 0
         val drive = DriveItem("c", "Samsung BAR", DriveCheck.Done(DriveSize.Known(64_000_000_000)))
-        show { DrivePicker(listOf(drive), null, "Acer Googlebook 14", false, "c", false, {}, { confirmed = it }, { dismissed++ }, {}) }
+        show { DrivePicker(listOf(drive), null, "Acer Chromebook 514", false, "c", false, {}, { confirmed = it }, { dismissed++ }, {}) }
         compose.onNodeWithText(s(R.string.drive_confirm_title, "Samsung BAR (64 GB)")).assertExists()
-        compose.onNodeWithText(s(R.string.drive_confirm_body, "Acer Googlebook 14")).assertExists()
+        compose.onNodeWithText(s(R.string.drive_confirm_body, "Acer Chromebook 514")).assertExists()
         capture("confirm")
         compose.onNode(hasText(s(R.string.drive_confirm_hold))).performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText(s(R.string.drive_cancel)).performClick()
@@ -357,12 +357,12 @@ class ScreensTest {
     fun aFinishedFlashShowsTheGuide() {
         val image = imageBytes(100_000)
         val zip = zipOf("image.bin" to image)
-        val request = FlashRequest(device, "https://x/r.zip", ExpectedDigest.sha1(sha1Hex(zip)), image.size.toLong(), DeviceFamily.GOOGLEBOOK, "Acer Googlebook 14")
+        val request = FlashRequest(device, "https://x/r.zip", ExpectedDigest.sha1(sha1Hex(zip)), image.size.toLong(), DeviceFamily.CHROMEBOOK, "Acer Chromebook 514")
         show {
             FlashScreen(request, onFinish = {}, flasher = { app -> UsbFlasher(app, FakeDriveConnector(FakeMassStorage(4096)), BytesSource(zip, true)) })
         }
         compose.waitUntil(10_000) { compose.onAllNodesWithText(s(R.string.flash_verified_chip)).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText(s(R.string.guide_title, s(R.string.guide_device_googlebook))).assertExists()
+        compose.onNodeWithText(s(R.string.guide_title, s(R.string.guide_device_chromebook))).assertExists()
         capture("ready")
     }
 
