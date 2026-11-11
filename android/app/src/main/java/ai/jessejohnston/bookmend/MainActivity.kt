@@ -59,8 +59,11 @@ class MainActivity : ComponentActivity() {
      * physically in this device, and a second device can't continue it.
      */
     private fun onRouteChanged(route: Route?) {
+        currentRoute = route
         if (Build.VERSION.SDK_INT >= HANDOFF_API) updateHandoff(route)
     }
+
+    private var currentRoute: Route? = null
 
     @RequiresApi(HANDOFF_API)
     @CoverageExempt("Android 17 handoff API; Robolectric models up to API 36.")
@@ -72,16 +75,18 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    /** What travels: the family and the chosen image. Without Bookmend there, the release page opens. */
+    /** What travels: the family and the chosen image. Without Bookmend there, the project page opens. */
     @RequiresApi(HANDOFF_API)
     @CoverageExempt("Android 17 handoff API; Robolectric models up to API 36.")
     override fun onHandoffActivityDataRequested(info: HandoffActivityDataRequestInfo): HandoffActivityData =
         HandoffActivityData.Builder(ComponentName(this, MainActivity::class.java))
             .setExtras(wizard.handoffExtras())
-            .setFallbackUri(Uri.parse(RELEASES_URL))
+            .setFallbackUri(Uri.parse(PROJECT_URL))
             .build()
 
+    /** A handoff arriving mid-write is ignored: taking it would cancel a half-written drive. */
     private fun receiveHandoff(intent: Intent?) {
+        if (Route.isBusy(currentRoute)) return
         val extras = intent?.extras ?: return
         wizard.restoreHandoff(extras.getString(WizardViewModel.KEY_FAMILY), extras.getString(WizardViewModel.KEY_IMAGE))
     }
@@ -89,6 +94,6 @@ class MainActivity : ComponentActivity() {
     private companion object {
         /** Android 17, where Continue On's handoff API arrived. */
         const val HANDOFF_API = 37
-        const val RELEASES_URL = "https://github.com/jessejamesjohnston/bookrecovery/releases/latest"
+        const val PROJECT_URL = "https://github.com/jessejamesjohnston/bookrecovery"
     }
 }

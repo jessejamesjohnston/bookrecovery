@@ -60,9 +60,24 @@ class AppShellTest {
     }
 
     @Test
+    fun aHandoffMidWriteIsIgnored() {
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+        // Pretend the wizard is writing a drive, as RecoveryApp reports it.
+        val field = MainActivity::class.java.getDeclaredField("currentRoute").apply { isAccessible = true }
+        field.set(activity, ai.jessejohnston.bookmend.ui.Route.Flash)
+        controller.newIntent(Intent(context, MainActivity::class.java).putExtra(WizardViewModel.KEY_FAMILY, "GOOGLEBOOK"))
+        val wizard = androidx.lifecycle.ViewModelProvider(activity)[WizardViewModel::class.java]
+        assertEquals(null, wizard.family.value)
+        controller.pause().stop().destroy()
+    }
+
+    @Test
     fun aHandoffCanArriveWhileOpen() {
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         controller.newIntent(Intent(context, MainActivity::class.java).putExtra(WizardViewModel.KEY_FAMILY, "GOOGLEBOOK"))
+        val wizard = androidx.lifecycle.ViewModelProvider(controller.get())[WizardViewModel::class.java]
+        assertEquals("not busy, so the handoff is taken", ai.jessejohnston.bookmend.data.DeviceFamily.GOOGLEBOOK, wizard.family.value)
         controller.newIntent(Intent(context, MainActivity::class.java))
         controller.pause().stop().destroy()
     }

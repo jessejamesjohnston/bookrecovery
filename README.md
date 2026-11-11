@@ -11,9 +11,9 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><b>Download the latest release</b></a>
-  &nbsp;·&nbsp; <a href="#install">Install</a>
+  <a href="#install"><b>Install</b></a>
   &nbsp;·&nbsp; <a href="#how-its-built">How it's built</a>
+  &nbsp;·&nbsp; <a href="#build-it-yourself">Build it yourself</a>
 </p>
 
 <p align="center"><sub>Android 8.0 and later · phones, tablets and Googlebooks · talks only to Google's download server · Apache-2.0</sub></p>
@@ -31,7 +31,7 @@ When a Chromebook or Googlebook can't start, Google's fix is to make a recovery 
 - **Proves the result.** The download is checked against the checksum Google publishes, and every byte written is read back from the drive and compared.
 - **Survives a shaky connection.** If Wi-Fi drops partway through a 7.7 GB Googlebook image, Bookmend picks up from the byte where it stopped.
 - **Tells you what's next.** The finished screen shows the recovery steps for your device, with the right keys for a Chromebook or a Googlebook.
-- **Carries your choice across devices.** On Android 17, Continue On lets you pick the model on your phone and finish on a Googlebook. It is switched off while a drive is being written, since that drive is in the phone.
+- **Carries your choice across devices.** Built on Android 17's Continue On, it hands your model choice from your phone to a Googlebook. It is switched off while a drive is being written, since that drive is in the phone. Not yet tried between real devices.
 
 Bookmend can only make drives for models in Google's public recovery catalogs. A Googlebook that isn't in the catalog yet can't be recovered this way, by Bookmend or by Google's own tool.
 
@@ -58,8 +58,10 @@ Bookmend talks to one server: `dl.google.com`, for Google's three public recover
 
 ## Install
 
-- **From GitHub:** download the APK from the [latest release](../../releases/latest). It needs Android 8.0 or later and a phone that supports USB drives (USB OTG). The SHA-256 of the signing certificate is listed with each release so you can check it.
+- **From GitHub:** there is no signed release yet. The first one will be on the [Releases](../../releases) page, with the SHA-256 of its signing certificate so you can check it. Until then, [build it yourself](#build-it-yourself); a debug build installs on any phone.
 - **From Google Play:** not planned for now.
+
+Bookmend needs Android 8.0 or later and a phone that supports USB drives (USB OTG).
 
 You'll also want a USB drive you can erase: 8 GB or more for a Chromebook, 32 GB or more for a Googlebook. Use an adapter if it doesn't fit your phone's port.
 
@@ -74,7 +76,7 @@ Bookmend is a single Jetpack Compose app in Kotlin. Its work happens in four lay
 **The wizard.** One `WizardViewModel` holds the choices in `SavedStateHandle`, so rotation, resizing and process death keep them. That is also what Continue On sends to another device. The model browser is a Material 3 adaptive list-detail layout, and the rest follows Material 3 Expressive: springy motion, the wavy progress bar, a step indicator and predictive back.
 
 **Testing.**
-- **150 JVM tests.** The core is a simulated USB drive that parses the real SCSI command blocks, so the full flash runs in tests: download, unzip, write, checksum and read-back. The simulated drive can fail writes, corrupt reads, return partial transfers and run out of space. Every screen is also tested with Compose UI tests under Robolectric.
+- **151 JVM tests.** The core is a simulated USB drive that parses the real SCSI command blocks, so the full flash runs in tests: download, unzip, write, checksum and read-back. The simulated drive can fail writes, corrupt reads, return partial transfers and run out of space. Every screen is also tested with Compose UI tests under Robolectric.
 - **96.5% line coverage, gated at 95% in CI.** The only code left out is marked `@CoverageExempt` with its reason:
   - `UsbBulkTransport` and `UsbDriveConnector`: the last thin layer over a physical USB device.
   - `DriveScreen`: the wrapper that listens for USB plug-in and permission broadcasts. The interface inside it, `DrivePicker`, is fully tested.

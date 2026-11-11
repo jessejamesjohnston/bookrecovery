@@ -87,5 +87,7 @@ class HelpersTest {
         assertEquals("models", Route.Models.withQuery(" "))
         assertTrue(Route.Models.withQuery("Acer 514").startsWith("models?query="))
         assertEquals(listOf(0, 1, 1, 1, 2, 3, 0, 0, 0), Route.all.map { it.step })
+        assertEquals(listOf(Route.Flash, Route.EraseFlash), Route.all.filter(Route::isBusy))
+        assertFalse(Route.isBusy(null))
     }
 }

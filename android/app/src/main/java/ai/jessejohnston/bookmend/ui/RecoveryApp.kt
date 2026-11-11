@@ -95,7 +95,7 @@ fun RecoveryApp(
     val handoff by wizard.handoffRoute.collectAsStateWithLifecycle()
     val graphReady = entry != null
     LaunchedEffect(handoff, graphReady) {
-        if (graphReady) handoff?.let { target ->
+        if (graphReady && !Route.isBusy(route)) handoff?.let { target ->
             navController.popBackStack(Route.Welcome.pattern, inclusive = false)
             navController.navigate(Route.Family.pattern)
             navController.navigate(target)
@@ -115,7 +115,7 @@ fun RecoveryApp(
         navController.popBackStack(Route.Welcome.pattern, inclusive = false)
     }
 
-    val busy = route == Route.Flash || route == Route.EraseFlash
+    val busy = Route.isBusy(route)
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
 
     Scaffold(

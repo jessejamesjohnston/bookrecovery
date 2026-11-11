@@ -33,5 +33,8 @@ sealed class Route(val pattern: String, val step: Int = 0) {
         val all by lazy { listOf(Welcome, Family, Identify, Models, Drive, Flash, EraseDrive, EraseFlash, Licenses) }
 
         fun of(pattern: String?): Route? = all.firstOrNull { it.pattern == pattern }
+
+        /** Writing or erasing a drive: nothing may navigate away from it. */
+        fun isBusy(route: Route?): Boolean = route == Flash || route == EraseFlash
     }
 }
