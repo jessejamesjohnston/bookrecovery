@@ -87,7 +87,11 @@ class ScreensTest {
     private val googlebooks = CatalogParser.googlebook(CatalogFixtures.googlebook)
 
     private fun show(content: @Composable () -> Unit) =
-        compose.setContent { BookmendTheme(dynamicColor = false) { content() } }
+        compose.setContent {
+            BookmendTheme(dynamicColor = false) {
+                androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.background) { content() }
+            }
+        }
 
     /**
      * Draws the screen for real (so drawing code runs and counts) and saves it

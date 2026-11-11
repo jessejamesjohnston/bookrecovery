@@ -62,7 +62,10 @@ class AccessibilityTest(private val dark: Boolean, private val fontScale: Float)
         compose.setContent {
             val base = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(base.density, fontScale)) {
-                BookmendTheme(darkTheme = dark, dynamicColor = false) { content() }
+                BookmendTheme(darkTheme = dark, dynamicColor = false) {
+                    // The app paints its background with a Surface; contrast is judged against it.
+                    androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.background) { content() }
+                }
             }
         }
         compose.onRoot().tryPerformAccessibilityChecks()
