@@ -42,6 +42,11 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    sourceSets {
+        // Fixtures both the JVM tests and the on-device tests use.
+        getByName("test").kotlin.directories += "src/sharedTest/java"
+        getByName("androidTest").kotlin.directories += "src/sharedTest/java"
+    }
     testOptions {
         unitTests {
             // Robolectric needs merged resources so code under test can load its strings.

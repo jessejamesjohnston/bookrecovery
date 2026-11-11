@@ -16,8 +16,14 @@ import java.nio.ByteOrder
 class FakeMassStorage(
     /** Drive size in 512-byte sectors. Writes past it fail, as on real media. */
     val totalSectors: Long,
-    private val fill: Byte = 0xAA.toByte()
+    private val fill: Byte = 0xAA.toByte(),
+    /** False keeps nothing: writes are counted and every read returns [fill]. */
+    private val storeWrites: Boolean = true
 ) : BulkTransport {
+
+    /** Sectors accepted by successful writes. */
+    var sectorsWritten = 0L
+        private set
 
     /** Fail (status 1) any WRITE(10) that touches this LBA. */
     var failWriteAtLba: Long? = null
@@ -38,7 +44,9 @@ class FakeMassStorage(
     val commands = mutableListOf<Triple<Int, Long, Int>>()
 
     private val sectors = HashMap<Long, ByteArray>()
-    private val pendingIn = ArrayDeque<Byte>()
+    /** Bytes the drive will return on bulk IN, as whole arrays so large reads stay cheap. */
+    private val pendingIn = ArrayDeque<ByteArray>()
+    private var pendingInPos = 0
     private var pendingWrite: PendingWrite? = null
 
     private class PendingWrite(val tag: Int, val lba: Long, val bytes: ByteArray, var received: Int = 0)
@@ -92,11 +100,14 @@ class FakeMassStorage(
                 if (lba + count > totalSectors) {
                     queueStatus(tag, transferLength, failed = true)
                 } else {
+                    val data = ByteArray(count * SECTOR)
                     for (i in 0 until count) {
-                        val data = sectorAt(lba + i).copyOf()
-                        if (corruptReadAtLba == lba + i) data[0] = (data[0].toInt() xor 0xff).toByte()
-                        data.forEach { pendingIn.addLast(it) }
+                        System.arraycopy(sectorAt(lba + i), 0, data, i * SECTOR, SECTOR)
+                        if (corruptReadAtLba == lba + i) {
+                            data[i * SECTOR] = (data[i * SECTOR].toInt() xor 0xff).toByte()
+                        }
                     }
+                    pendingIn.addLast(data)
                     queueStatus(tag, 0, failed = false)
                 }
             }
@@ -107,7 +118,7 @@ class FakeMassStorage(
                     val answer = ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN)
                     answer.putInt((totalSectors - 1).toInt())
                     answer.putInt(SECTOR)
-                    answer.array().forEach { pendingIn.addLast(it) }
+                    pendingIn.addLast(answer.array())
                     queueStatus(tag, 0, failed = false)
                 }
             }
@@ -117,9 +128,14 @@ class FakeMassStorage(
     }
 
     override fun bulkIn(buffer: ByteArray, length: Int, timeoutMs: Int): Int {
-        if (pendingIn.isEmpty()) return -1
-        val n = minOf(length, maxInChunk, pendingIn.size, buffer.size)
-        for (i in 0 until n) buffer[i] = pendingIn.removeFirst()
+        val head = pendingIn.firstOrNull() ?: return -1
+        val n = minOf(length, maxInChunk, head.size - pendingInPos, buffer.size)
+        System.arraycopy(head, pendingInPos, buffer, 0, n)
+        pendingInPos += n
+        if (pendingInPos == head.size) {
+            pendingIn.removeFirst()
+            pendingInPos = 0
+        }
         return n
     }
 
@@ -129,7 +145,8 @@ class FakeMassStorage(
         val outOfRange = write.lba + count > totalSectors
         val injected = failWriteAtLba?.let { it >= write.lba && it < write.lba + count } == true
         if (!outOfRange && !injected) {
-            for (i in 0 until count) {
+            sectorsWritten += count
+            if (storeWrites) for (i in 0 until count) {
                 sectors[write.lba + i] = write.bytes.copyOfRange(i * SECTOR, (i + 1) * SECTOR)
             }
         }
@@ -142,10 +159,12 @@ class FakeMassStorage(
         csw.putInt(tag)
         csw.putInt(residue)
         csw.put(if (failed) 1 else 0)
-        csw.array().forEach { pendingIn.addLast(it) }
+        pendingIn.addLast(csw.array())
     }
 
-    private fun sectorAt(lba: Long): ByteArray = sectors[lba] ?: ByteArray(SECTOR) { fill }
+    private val blank = ByteArray(SECTOR) { fill }
+
+    private fun sectorAt(lba: Long): ByteArray = sectors[lba] ?: blank
 
     private fun beInt(b: ByteArray, at: Int): Int =
         ((b[at].toInt() and 0xff) shl 24) or ((b[at + 1].toInt() and 0xff) shl 16) or
