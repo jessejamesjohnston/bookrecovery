@@ -64,6 +64,16 @@ class FlashEngine(private val clock: () -> Long = System::currentTimeMillis) {
     }
 
     /**
+     * Clears a cancel or skip before another attempt. [flash] deliberately
+     * doesn't do this itself: a cancel that arrives just before the write
+     * loop starts must still stop it.
+     */
+    fun reset() {
+        isCancelled = false
+        isVerificationSkipped = false
+    }
+
+    /**
      * Writes [source] to [bot] and verifies it. The caller owns [source]'s
      * stream and the drive: this closes neither.
      *
@@ -78,8 +88,7 @@ class FlashEngine(private val clock: () -> Long = System::currentTimeMillis) {
         expectedImageSize: Long?,
         listener: Listener
     ): Outcome {
-        isCancelled = false
-        isVerificationSkipped = false
+        if (isCancelled) return Outcome.Cancelled
 
         val driveBytes = bot.readCapacity()?.let { it.totalSectors * it.sectorSize }
         val catalogSize = expectedImageSize?.takeIf { it > 0 }

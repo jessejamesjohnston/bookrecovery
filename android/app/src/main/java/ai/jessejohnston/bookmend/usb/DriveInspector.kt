@@ -40,6 +40,8 @@ class DriveInspector(
     companion object {
         /** True when the device has a USB mass-storage interface (a drive, card reader or hub port). */
         fun isStorage(device: UsbDevice): Boolean =
-            (0 until device.interfaceCount).any { device.getInterface(it).interfaceClass == UsbConstants.USB_CLASS_MASS_STORAGE }
+            isStorage((0 until device.interfaceCount).map { device.getInterface(it).interfaceClass })
+
+        fun isStorage(interfaceClasses: List<Int>): Boolean = UsbConstants.USB_CLASS_MASS_STORAGE in interfaceClasses
     }
 }

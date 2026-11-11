@@ -3,6 +3,8 @@ package ai.jessejohnston.bookmend.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import ai.jessejohnston.bookmend.ui.FlashRequest
+import ai.jessejohnston.bookmend.usb.UsbFlasher
+import android.app.Application
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import android.os.Build
@@ -65,13 +67,12 @@ import androidx.window.core.layout.WindowSizeClass
 @Composable
 fun FlashScreen(
     request: FlashRequest,
-    onFinish: () -> Unit
+    onFinish: () -> Unit,
+    flasher: ((Application) -> UsbFlasher)? = null,
 ) {
     val viewModel: FlashViewModel = viewModel {
-        FlashViewModel(
-            application = checkNotNull(this[AndroidViewModelFactory.APPLICATION_KEY]),
-            request = request
-        )
+        val app = checkNotNull(this[AndroidViewModelFactory.APPLICATION_KEY])
+        if (flasher == null) FlashViewModel(app, request) else FlashViewModel(app, request, flasher(app))
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 

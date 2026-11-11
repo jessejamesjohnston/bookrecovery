@@ -91,6 +91,11 @@ class UsbFlasher(
         engine.skipVerification()
     }
 
+    /** Clears a cancel or skip so the next flash runs: call before a retry. */
+    fun reset() {
+        engine.reset()
+    }
+
     /**
      * Streams the recovery image at [url] onto [device], then verifies it.
      * The drive is claimed before the download starts, so a drive that can't
@@ -137,6 +142,9 @@ class UsbFlasher(
                 FlashEngine.Outcome.Cancelled -> Result.Cancelled
                 is FlashEngine.Outcome.Failed -> failure(outcome.failure)
             }
+        } catch (e: DownloadLostException) {
+            Log.e(TAG, "Download lost", e)
+            Result.WriteError(context.getString(R.string.error_download_lost))
         } catch (e: Exception) {
             Log.e(TAG, "Error flashing to USB", e)
             Result.WriteError(context.getString(R.string.error_unexpected, e.message ?: e.javaClass.simpleName))

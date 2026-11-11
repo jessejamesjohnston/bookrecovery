@@ -96,6 +96,7 @@
     <string name="step_downloading">Downloading and writing…</string>
     <string name="step_writing_usb">Writing to the drive…</string>
     <string name="step_verifying">Checking every byte…</string>
+    <string name="step_reconnecting">Connection dropped. Picking up where it left off…</string>
 
     <!-- Flash errors (UsbFlasher) -->
     <string name="error_open_local">Couldn\'t open the image file. It may have been moved or deleted.</string>
@@ -110,6 +111,7 @@
     <string name="error_authenticity_failed">The download didn\'t match Google\'s published checksum, so it may be damaged. Try again.</string>
     <string name="error_erase_failed">Couldn\'t erase the drive. It may be write-protected, busy, or unplugged.</string>
     <string name="error_unexpected">Something went wrong: %s</string>
+    <string name="error_download_lost">The download kept dropping. Check your connection and try again.</string>
 
     <!-- Flash screen -->
     <string name="flash_step_starting">Starting…</string>

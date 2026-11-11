@@ -28,7 +28,9 @@ sealed class Route(val pattern: String, val step: Int = 0) {
         const val ARG_QUERY = "query"
         const val STEPS = 3
 
-        val all = listOf(Welcome, Family, Identify, Models, Drive, Flash, EraseDrive, EraseFlash, Licenses)
+        // Lazy: built eagerly, this list would hold null for whichever route
+        // object was being initialized when the companion was first touched.
+        val all by lazy { listOf(Welcome, Family, Identify, Models, Drive, Flash, EraseDrive, EraseFlash, Licenses) }
 
         fun of(pattern: String?): Route? = all.firstOrNull { it.pattern == pattern }
     }

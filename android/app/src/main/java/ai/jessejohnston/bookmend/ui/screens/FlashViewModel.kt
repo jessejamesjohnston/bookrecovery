@@ -137,6 +137,7 @@ class FlashViewModel(
      */
     fun retryFlash() {
         eta.reset()
+        flasher.reset()
         _uiState.update {
             FlashUiState(stepText = string(R.string.flash_step_starting))
         }

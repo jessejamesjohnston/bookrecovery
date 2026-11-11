@@ -7,7 +7,6 @@ import android.provider.OpenableColumns
 import android.util.Log
 import java.io.InputStream
 import java.net.HttpURLConnection
-import java.net.URL
 
 /** An opened image: the raw byte stream and what is known about it before reading. */
 class OpenedSource(val stream: InputStream, val contentLength: Long, val isZip: Boolean)
@@ -25,7 +24,10 @@ fun interface ImageSourceOpener {
 }
 
 /** Official images over HTTPS, and local files picked through the system file picker. */
-class HttpAndContentSourceOpener(private val context: Context) : ImageSourceOpener {
+class HttpAndContentSourceOpener(
+    private val context: Context,
+    private val connect: (String, Map<String, String>) -> HttpURLConnection = ResumableHttpStream::defaultConnect,
+) : ImageSourceOpener {
 
     private companion object {
         const val TAG = "ImageSource"
@@ -95,22 +97,23 @@ class HttpAndContentSourceOpener(private val context: Context) : ImageSourceOpen
                 ?: return SourceResult.Failed(context.getString(R.string.error_open_local))
         } else {
             onStep(context.getString(R.string.step_connecting_server))
-            val connection = URL(url).openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.connectTimeout = 15000
-            connection.readTimeout = 60000
-            connection.connect()
-
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                Log.e(TAG, "Server returned HTTP ${connection.responseCode}")
-                return SourceResult.Failed(
-                    context.getString(R.string.error_http_server, connection.responseCode)
-                )
+            // A dropped connection resumes from the same byte; the flash above
+            // never sees the gap, only a status line while it reconnects.
+            val stream = ResumableHttpStream(
+                url,
+                connect = connect,
+                onReconnecting = { onStep(context.getString(R.string.step_reconnecting)) },
+                onResumed = { onStep(context.getString(R.string.step_downloading_unpacking)) }
+            )
+            try {
+                stream.open()
+            } catch (e: HttpStatusException) {
+                Log.e(TAG, "Server returned HTTP ${e.code}")
+                return SourceResult.Failed(context.getString(R.string.error_http_server, e.code))
             }
-            // contentLength (Int) overflows on >2GB downloads; several official
-            // images exceed that compressed.
-            contentLength = connection.contentLengthLong
-            inputStream = connection.inputStream
+            // A Long: several official images are over 2 GB even compressed.
+            contentLength = stream.contentLength
+            inputStream = stream
         }
         return SourceResult.Ok(OpenedSource(inputStream, contentLength, isZip))
     }

@@ -8,7 +8,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -39,6 +38,8 @@ class FlashNotificationController(private val context: Context) {
     enum class Phase { ERASING, FLASHING, VERIFYING }
 
     companion object {
+        /** The icon's navy, for the notification accent. */
+        private val BRAND_NAVY = 0xFF2E3B63.toInt()
         private const val TAG = "FlashNotifications"
         private const val CHANNEL_ID = "flash_progress"
         private const val NOTIFICATION_ID = 1001
@@ -145,7 +146,7 @@ class FlashNotificationController(private val context: Context) {
     /** Posts the terminal success/error notification shown when the app is backgrounded. */
     fun postCompletion(title: String, text: String, isError: Boolean) {
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(if (isError) android.R.drawable.stat_notify_error else android.R.drawable.stat_sys_download_done)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
             .setOngoing(false)
@@ -163,10 +164,10 @@ class FlashNotificationController(private val context: Context) {
     private fun buildProgressNotification(progress: Float, title: String, text: String, chipText: String): Notification {
         return if (Build.VERSION.SDK_INT >= 36) {
             val nativeBuilder = Notification.Builder(context, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)
                 .setContentText(text)
-                .setColor(Color.parseColor("#4285F4"))
+                .setColor(BRAND_NAVY)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setCategory(Notification.CATEGORY_PROGRESS)
@@ -192,10 +193,10 @@ class FlashNotificationController(private val context: Context) {
             built
         } else {
             NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)
                 .setContentText(text)
-                .setColor(Color.parseColor("#4285F4"))
+                .setColor(BRAND_NAVY)
                 .setProgress(1000, (progress * 1000).toInt(), false)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
