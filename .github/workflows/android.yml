@@ -18,8 +18,8 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
-      - name: Build, test and lint
-        run: ./gradlew assembleDebug testDebugUnitTest lint
+      - name: Build, test, coverage gate and lint
+        run: ./gradlew assembleDebug testDebugUnitTest koverVerifyDebug lint
       - name: Upload reports
         if: failure()
         uses: actions/upload-artifact@v4
@@ -28,3 +28,4 @@ jobs:
           path: |
             android/app/build/reports/lint-results-debug.html
             android/app/build/reports/tests/
+            android/app/build/reports/kover/

@@ -56,7 +56,8 @@ fun HoldToConfirmButton(
             .height(56.dp)
             .clip(CircleShape)
             .background(container)
-            .semantics {
+            // One node for screen readers: a button, named by its label.
+            .semantics(mergeDescendants = true) {
                 role = Role.Button
                 onClick(label = accessibilityLabel) { onConfirm(); true }
             }

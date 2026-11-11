@@ -157,6 +157,16 @@ class FlashViewModelTest {
         vm.onBackgroundedChanged(false)
     }
 
+    @Test
+    @org.robolectric.annotation.Config(sdk = [34])
+    fun progressNotificationsWorkBelowLiveUpdates() {
+        shadowOf(app).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+        val vm = vm(source = BytesSource(imageBytes(3_000_000), isZip = false), request = request(digest = null), drive = FakeMassStorage(65_536))
+        vm.onBackgroundedChanged(true)
+        vm.start()
+        assertFalse(vm.finished().hasError)
+    }
+
     /** Serves bytes, but holds the second read until [gate] opens, so a test can act mid-flash. */
     private class GatedStream(private val bytes: ByteArray, private val gate: CountDownLatch) : InputStream() {
         private var pos = 0

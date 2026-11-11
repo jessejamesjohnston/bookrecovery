@@ -5,6 +5,7 @@ import ai.jessejohnston.bookmend.ui.art.PhoneAndDrive
 import ai.jessejohnston.bookmend.usb.DriveInspector
 import ai.jessejohnston.bookmend.usb.DriveSize
 import ai.jessejohnston.bookmend.usb.UsbDriveConnector
+import ai.jessejohnston.bookmend.util.CoverageExempt
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -60,11 +61,14 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 
 /** A drive on screen: unchecked until permission allows reading its size. */
-private sealed interface DriveCheck {
+sealed interface DriveCheck {
     data object NotChecked : DriveCheck
     data object Checking : DriveCheck
     data class Done(val size: DriveSize) : DriveCheck
 }
+
+/** A plugged-in drive as the picker shows it. */
+data class DriveItem(val id: String, val name: String, val check: DriveCheck = DriveCheck.NotChecked)
 
 /**
  * Plug in a drive, see what it is, and confirm the erase. Only USB storage is
@@ -76,7 +80,7 @@ private sealed interface DriveCheck {
  * @param requiredBytes The image size; null when unknown (a local file, or erase only).
  * @param targetName The model the drive is for, shown in the confirmation.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@CoverageExempt("Listens for USB attach, detach and permission broadcasts and asks for access: real USB events only.")
 @Composable
 fun DriveScreen(
     requiredBytes: Long?,
@@ -152,6 +156,43 @@ fun DriveScreen(
         }
     }
 
+    val unknown = stringResource(R.string.drive_unknown_name)
+    DrivePicker(
+        drives = drives.map { DriveItem(it.deviceName, driveName(it.manufacturerName, it.productName, unknown), checks[it.deviceName] ?: DriveCheck.NotChecked) },
+        requiredBytes = requiredBytes,
+        targetName = targetName,
+        eraseOnly = eraseOnly,
+        confirming = confirming?.deviceName,
+        permissionDenied = permissionDenied,
+        onSelect = { id -> drives.firstOrNull { it.deviceName == id }?.let(::select) },
+        onConfirm = { id ->
+            confirming = null
+            drives.firstOrNull { it.deviceName == id }?.let(onConfirmed)
+        },
+        onDismissConfirm = { confirming = null },
+        onDismissDenied = { permissionDenied = false },
+    )
+}
+
+/**
+ * The drive step's whole interface, with no USB in it: the list, each drive's
+ * state, the confirmation sheet and the permission dialog. [DriveScreen] feeds
+ * it real drives; tests feed it fakes.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun DrivePicker(
+    drives: List<DriveItem>,
+    requiredBytes: Long?,
+    targetName: String?,
+    eraseOnly: Boolean,
+    confirming: String?,
+    permissionDenied: Boolean,
+    onSelect: (String) -> Unit,
+    onConfirm: (String) -> Unit,
+    onDismissConfirm: () -> Unit,
+    onDismissDenied: () -> Unit,
+) {
     StepLayout {
         StepTitle(stringResource(if (eraseOnly) R.string.menu_erase_drive else R.string.drive_title), Modifier.padding(top = 8.dp))
         StepBody(stringResource(R.string.drive_body))
@@ -176,22 +217,17 @@ fun DriveScreen(
                 Text(stringResource(R.string.drive_empty_body), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            drives.forEach { device ->
-                DriveCard(
-                    device = device,
-                    check = checks[device.deviceName] ?: DriveCheck.NotChecked,
-                    requiredBytes = requiredBytes,
-                    onClick = { select(device) }
-                )
+            drives.forEach { drive ->
+                DriveCard(drive = drive, requiredBytes = requiredBytes, onClick = { onSelect(drive.id) })
             }
         }
     }
 
-    confirming?.let { device ->
-        val size = (checks[device.deviceName] as? DriveCheck.Done)?.size as? DriveSize.Known
-        val name = driveName(device) + (size?.let { " (${formatBytes(it.bytes)})" } ?: "")
+    drives.firstOrNull { it.id == confirming }?.let { drive ->
+        val size = (drive.check as? DriveCheck.Done)?.size as? DriveSize.Known
+        val name = drive.name + (size?.let { " (${formatBytes(it.bytes)})" } ?: "")
         val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(onDismissRequest = { confirming = null }, sheetState = sheet) {
+        ModalBottomSheet(onDismissRequest = onDismissConfirm, sheetState = sheet) {
             Column(
                 Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -208,12 +244,9 @@ fun DriveScreen(
                     label = stringResource(R.string.drive_confirm_hold),
                     holdingLabel = stringResource(R.string.drive_confirm_holding),
                     accessibilityLabel = stringResource(R.string.drive_confirm_a11y_action),
-                    onConfirm = {
-                        confirming = null
-                        onConfirmed(device)
-                    }
+                    onConfirm = { onConfirm(drive.id) }
                 )
-                TextButton(onClick = { confirming = null }, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = onDismissConfirm, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.drive_cancel))
                 }
             }
@@ -222,17 +255,18 @@ fun DriveScreen(
 
     if (permissionDenied) {
         AlertDialog(
-            onDismissRequest = { permissionDenied = false },
+            onDismissRequest = onDismissDenied,
             title = { Text(stringResource(R.string.permission_required_title)) },
             text = { Text(stringResource(R.string.permission_denied_usb)) },
-            confirmButton = { Button(onClick = { permissionDenied = false }) { Text(stringResource(R.string.action_ok)) } }
+            confirmButton = { Button(onClick = onDismissDenied) { Text(stringResource(R.string.action_ok)) } }
         )
     }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun DriveCard(device: UsbDevice, check: DriveCheck, requiredBytes: Long?, onClick: () -> Unit) {
+private fun DriveCard(drive: DriveItem, requiredBytes: Long?, onClick: () -> Unit) {
+    val check = drive.check
     val size = (check as? DriveCheck.Done)?.size
     val tooSmall = size is DriveSize.Known && requiredBytes != null && size.bytes < requiredBytes
     val problem = tooSmall || size is DriveSize.Unusable
@@ -251,7 +285,7 @@ private fun DriveCard(device: UsbDevice, check: DriveCheck, requiredBytes: Long?
                 modifier = Modifier.size(32.dp)
             )
             Column(Modifier.weight(1f).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }) {
-                Text(driveName(device), style = MaterialTheme.typography.titleMedium)
+                Text(drive.name, style = MaterialTheme.typography.titleMedium)
                 Text(
                     when {
                         check is DriveCheck.Checking -> stringResource(R.string.drive_checking)
@@ -269,12 +303,12 @@ private fun DriveCard(device: UsbDevice, check: DriveCheck, requiredBytes: Long?
     }
 }
 
-@Composable
-private fun driveName(device: UsbDevice): String =
-    listOfNotNull(device.manufacturerName?.trim(), device.productName?.trim())
+/** "SanDisk Ultra" from the drive's own strings, or [fallback] when it gives none. */
+fun driveName(manufacturer: String?, product: String?, fallback: String): String =
+    listOfNotNull(manufacturer?.trim(), product?.trim())
         .filter { it.isNotEmpty() }
         .distinct()
         .joinToString(" ")
-        .ifEmpty { stringResource(R.string.drive_unknown_name) }
+        .ifEmpty { fallback }
 
 private const val ACTION_USB_PERMISSION = "ai.jessejohnston.bookmend.USB_PERMISSION"

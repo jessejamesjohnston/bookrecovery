@@ -4,6 +4,7 @@ import ai.jessejohnston.bookmend.ui.RecoveryApp
 import ai.jessejohnston.bookmend.ui.Route
 import ai.jessejohnston.bookmend.ui.WizardViewModel
 import ai.jessejohnston.bookmend.ui.theme.BookmendTheme
+import ai.jessejohnston.bookmend.util.CoverageExempt
 import android.app.HandoffActivityData
 import android.app.HandoffActivityDataRequestInfo
 import android.app.HandoffActivityParams
@@ -62,6 +63,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @RequiresApi(HANDOFF_API)
+    @CoverageExempt("Android 17 handoff API; Robolectric models up to API 36.")
     private fun updateHandoff(route: Route?) {
         val choosing = route == Route.Family || route == Route.Identify || route == Route.Models || route == Route.Drive
         setHandoffEnabled(
@@ -72,6 +74,7 @@ class MainActivity : ComponentActivity() {
 
     /** What travels: the family and the chosen image. Without Bookmend there, the release page opens. */
     @RequiresApi(HANDOFF_API)
+    @CoverageExempt("Android 17 handoff API; Robolectric models up to API 36.")
     override fun onHandoffActivityDataRequested(info: HandoffActivityDataRequestInfo): HandoffActivityData =
         HandoffActivityData.Builder(ComponentName(this, MainActivity::class.java))
             .setExtras(wizard.handoffExtras())

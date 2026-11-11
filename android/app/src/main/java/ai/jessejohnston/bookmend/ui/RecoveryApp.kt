@@ -11,6 +11,7 @@ import ai.jessejohnston.bookmend.ui.screens.LicensesScreen
 import ai.jessejohnston.bookmend.ui.screens.ModelBrowserScreen
 import ai.jessejohnston.bookmend.ui.screens.WelcomeScreen
 import android.net.Uri
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -89,9 +90,12 @@ fun RecoveryApp(
     val image by wizard.image.collectAsStateWithLifecycle()
 
     // A choice made on another device (Continue On) lands on the same model.
+    // It waits for the graph's first destination: on a cold start the handoff
+    // can be ready before the NavHost has set its graph.
     val handoff by wizard.handoffRoute.collectAsStateWithLifecycle()
-    LaunchedEffect(handoff) {
-        handoff?.let { target ->
+    val graphReady = entry != null
+    LaunchedEffect(handoff, graphReady) {
+        if (graphReady) handoff?.let { target ->
             navController.popBackStack(Route.Welcome.pattern, inclusive = false)
             navController.navigate(Route.Family.pattern)
             navController.navigate(target)
@@ -112,6 +116,7 @@ fun RecoveryApp(
     }
 
     val busy = route == Route.Flash || route == Route.EraseFlash
+    val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
 
     Scaffold(
         topBar = {
@@ -129,7 +134,9 @@ fun RecoveryApp(
                         busy -> IconButton(onClick = ::home) {
                             Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_home))
                         }
-                        else -> IconButton(onClick = { navController.navigateUp() }) {
+                        // The same back as the system gesture, so a screen's own back
+                        // handling (the model browser's list and detail) applies first.
+                        else -> IconButton(onClick = { backDispatcher?.onBackPressed() ?: navController.navigateUp() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                         }
                     }

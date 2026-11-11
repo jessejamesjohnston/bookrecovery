@@ -1,5 +1,6 @@
 package ai.jessejohnston.bookmend.data
 
+import androidx.annotation.VisibleForTesting
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -51,8 +52,9 @@ class RecoveryRepository(
 ) {
 
     companion object {
-        /** Process-wide instance so every screen shares one cached catalog. */
-        val instance by lazy { RecoveryRepository() }
+        /** Process-wide instance so every screen shares one cached catalog. Tests may swap it. */
+        @set:VisibleForTesting
+        var instance: RecoveryRepository = RecoveryRepository()
 
         const val CHROMEOS_URL = "https://dl.google.com/dl/edgedl/chromeos/recovery/recovery2.json"
         const val FLEX_URL = "https://dl.google.com/dl/edgedl/chromeos/recovery/cloudready_recovery2.json"

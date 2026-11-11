@@ -36,10 +36,9 @@ data class EraseUiState(
 class EraseViewModel(
     application: Application,
     private val device: UsbDevice,
+    private val flasher: UsbFlasher = UsbFlasher(application.getSystemService(Context.USB_SERVICE) as UsbManager, application),
 ) : AndroidViewModel(application) {
 
-    private val usbManager = application.getSystemService(Context.USB_SERVICE) as UsbManager
-    private val flasher = UsbFlasher(usbManager, application)
 
     private val _uiState = MutableStateFlow(
         EraseUiState(stepText = application.getString(R.string.erase_step))

@@ -239,12 +239,13 @@ class FlashViewModel(
                         UsbFlasher.Verification.WRITE_VERIFIED -> string(R.string.flash_success_write_verified)
                         UsbFlasher.Verification.SKIPPED -> string(R.string.flash_success)
                     }
-                    _uiState.update {
-                        it.copy(stepText = message, progress = 1f, isVerifying = false, isFinished = true, verification = result.verification, secondsLeft = null)
-                    }
+                    // Side effects first: whoever sees "finished" can rely on them being done.
                     notifications.stopKeepAlive()
                     if (isBackgrounded) {
                         notifications.postCompletion(string(R.string.notif_success_title), message, isError = false)
+                    }
+                    _uiState.update {
+                        it.copy(stepText = message, progress = 1f, isVerifying = false, isFinished = true, verification = result.verification, secondsLeft = null)
                     }
                 }
                 is UsbFlasher.Result.WriteError -> finishWithError(result.message, canRetry = false)
@@ -254,6 +255,10 @@ class FlashViewModel(
     }
 
     private fun finishWithError(message: String, canRetry: Boolean) {
+        notifications.stopKeepAlive()
+        if (isBackgrounded) {
+            notifications.postCompletion(string(R.string.notif_error_title), message, isError = true)
+        }
         _uiState.update {
             it.copy(
                 stepText = string(R.string.flash_error, message),
@@ -262,10 +267,6 @@ class FlashViewModel(
                 hasError = true,
                 canRetry = canRetry
             )
-        }
-        notifications.stopKeepAlive()
-        if (isBackgrounded) {
-            notifications.postCompletion(string(R.string.notif_error_title), message, isError = true)
         }
     }
 }

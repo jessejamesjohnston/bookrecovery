@@ -1,5 +1,6 @@
 package ai.jessejohnston.bookmend.usb.bot
 
+import ai.jessejohnston.bookmend.util.CoverageExempt
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint
 
@@ -17,6 +18,7 @@ interface BulkTransport {
 }
 
 /** The real pipes. Deliberately a passthrough: everything above it is testable. */
+@CoverageExempt("Calls UsbDeviceConnection.bulkTransfer on a physical drive.")
 class UsbBulkTransport(
     private val connection: UsbDeviceConnection,
     private val endpointIn: UsbEndpoint,

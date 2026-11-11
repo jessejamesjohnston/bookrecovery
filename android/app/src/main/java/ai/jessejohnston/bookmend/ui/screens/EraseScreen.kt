@@ -1,5 +1,7 @@
 package ai.jessejohnston.bookmend.ui.screens
 
+import ai.jessejohnston.bookmend.usb.UsbFlasher
+
 import android.hardware.usb.UsbDevice
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
@@ -24,12 +26,10 @@ import ai.jessejohnston.bookmend.ui.wizardContentWidth
  * the same shape as [FlashScreen].
  */
 @Composable
-fun EraseScreen(device: UsbDevice, onFinish: () -> Unit) {
+fun EraseScreen(device: UsbDevice, onFinish: () -> Unit, flasher: ((android.app.Application) -> UsbFlasher)? = null) {
     val viewModel: EraseViewModel = viewModel {
-        EraseViewModel(
-            application = checkNotNull(this[AndroidViewModelFactory.APPLICATION_KEY]),
-            device = device
-        )
+        val app = checkNotNull(this[AndroidViewModelFactory.APPLICATION_KEY])
+        if (flasher == null) EraseViewModel(app, device) else EraseViewModel(app, device, flasher(app))
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 

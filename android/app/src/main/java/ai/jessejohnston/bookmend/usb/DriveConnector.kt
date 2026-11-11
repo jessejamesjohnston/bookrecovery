@@ -3,6 +3,7 @@ package ai.jessejohnston.bookmend.usb
 import ai.jessejohnston.bookmend.R
 import ai.jessejohnston.bookmend.usb.bot.BotDevice
 import ai.jessejohnston.bookmend.usb.bot.UsbBulkTransport
+import ai.jessejohnston.bookmend.util.CoverageExempt
 import android.content.Context
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
@@ -24,6 +25,7 @@ fun interface DriveConnector {
     fun connect(device: UsbDevice): Claim
 }
 
+@CoverageExempt("Opens and claims a physical USB device; needs a real USB stack.")
 class UsbDriveConnector(
     private val usbManager: UsbManager,
     private val context: Context

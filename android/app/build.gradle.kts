@@ -113,3 +113,21 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+
+// Coverage: everything counts except code marked @CoverageExempt (a thin
+// layer over physical USB, Android 17 APIs Robolectric can't run), each with
+// its reason in the source. The README lists them. CI fails below the bound.
+kover {
+    reports {
+        filters {
+            excludes {
+                annotatedBy("ai.jessejohnston.bookmend.util.CoverageExempt")
+            }
+        }
+        variant("debug") {
+            verify {
+                rule("line") { minBound(95, kotlinx.kover.gradle.plugin.dsl.CoverageUnit.LINE) }
+            }
+        }
+    }
+}
