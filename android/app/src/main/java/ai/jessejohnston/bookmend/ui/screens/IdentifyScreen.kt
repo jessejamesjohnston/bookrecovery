@@ -1,7 +1,7 @@
 package ai.jessejohnston.bookmend.ui.screens
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import ai.jessejohnston.bookmend.ui.art.RecoveryScreenLaptop
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
@@ -16,9 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -96,12 +94,7 @@ fun IdentifyScreen(
         
         Spacer(modifier = Modifier.height(32.dp))
 
-        Image(
-            painter = painterResource(id = R.drawable.insert),
-            contentDescription = stringResource(R.string.identify_title),
-            modifier = Modifier.height(140.dp),
-            contentScale = ContentScale.Fit
-        )
+        RecoveryScreenLaptop(modifier = Modifier.fillMaxWidth().height(140.dp))
 
         Spacer(modifier = Modifier.height(32.dp))
 

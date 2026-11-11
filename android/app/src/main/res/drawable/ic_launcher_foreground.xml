@@ -1,10 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The mend: a closed book with a crack held by three stitches. Scaled to sit
+     inside the 72dp visible area of an adaptive icon. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#000000"
-        android:pathData="M31,63.928c0,0 6.4,-11 12.1,-13.1c7.2,-2.6 26,-1.4 26,-1.4l38.1,38.1L107,108.928l-72,-72" />
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.86" android:scaleY="0.86">
+        <path android:fillColor="#EADBC4"
+            android:pathData="M40,27h30a5,5 0,0 1,5 5v44a5,5 0,0 1,-5 5h-30a5,5 0,0 1,-5 -5v-44a5,5 0,0 1,5 -5z" />
+        <path android:fillColor="#1F2A44"
+            android:pathData="M37,25h30a6,6 0,0 1,6 6v46a6,6 0,0 1,-6 6h-30a6,6 0,0 1,-6 -6v-46a6,6 0,0 1,6 -6z" />
+        <path android:fillColor="#141C30"
+            android:pathData="M35,25h4v58h-4a4,4 0,0 1,-4 -4v-50a4,4 0,0 1,4 -4z" />
+        <path android:strokeColor="#F4ECE1" android:strokeWidth="3"
+            android:strokeLineCap="round" android:strokeLineJoin="round"
+            android:pathData="M50,33L57,45L51,54L61,73" />
+        <path android:strokeColor="#F06A2B" android:strokeWidth="3.2" android:strokeLineCap="round"
+            android:pathData="M48,42L59,37M49,52L59,48M51,63L62,60" />
+    </group>
 </vector>
